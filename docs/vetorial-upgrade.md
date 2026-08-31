@@ -39,3 +39,24 @@ images created on 2026-04-25 plus runtime patches applied to minified assets.
 - `ACTIVE_STORAGE_SERVICE`, `RAILS_INBOUND_EMAIL_SERVICE`, a stable CRM
   encryption source (`ENCRYPTION_KEY` or the existing `SECRET_KEY_BASE`) and
   `EVO_AI_CRM_URL` must be present before booting `v1.0.0`.
+
+## Deal pipeline deployment — 2026-08-31
+
+- Portainer stacks `02_evo_crm`, `03_evo_crm_sidekiq` and `08_evo_frontend`
+  were updated through the Portainer API, preserving Portainer ownership.
+- CRM and CRM Sidekiq run
+  `ghcr.io/ricardoisus/evo-ai-crm-community:vetorial-cd67891` pinned to digest
+  `sha256:59406983de307ebc7bab894fa225803b8a217111bee1d18aa40f320ae79fced2`.
+- Frontend runs
+  `ghcr.io/ricardoisus/evo-ai-frontend-community:main-9bc1b03` pinned to digest
+  `sha256:ebadfd29f5746c20d07aa94b0a13ab620348ed6f788fe8ef1e773fe76971bdec`.
+- The additive migration `20260829120000` completed before CRM Sidekiq and the
+  frontend were updated. Production checks confirmed the canonical UUID
+  `scheduled_actions.deal_id`, the bigint `legacy_deal_id`, deal association
+  tables, UTM defaults and migrated deal associations.
+- The pre-deploy database, Portainer database, compose files and image list are
+  stored under
+  `/root/evo_crm/backups/deal-pipeline-20260831-121643` on the Swarm manager.
+- Post-deploy checks confirmed all three services at `1/1`, internal and public
+  readiness HTTP 200, frontend HTTP 200 and a clean browser render of the login
+  page.
