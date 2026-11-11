@@ -60,3 +60,51 @@ images created on 2026-04-25 plus runtime patches applied to minified assets.
 - Post-deploy checks confirmed all three services at `1/1`, internal and public
   readiness HTTP 200, frontend HTTP 200 and a clean browser render of the login
   page.
+
+## Interface U6 release candidate — 2026-11-11 (not deployed)
+
+- CRM [PR #26](https://github.com/ricardoisus/evo-ai-crm-community/pull/26)
+  merged as `83d6a4eeda914c57ff7b8fea66058747ad86bb0e`; frontend
+  [PR #13](https://github.com/ricardoisus/evo-ai-frontend-community/pull/13)
+  merged as `783a9511320f41f21bc2a8b2ec2e9d4b184aa43c`.
+- Local validation: 37 CRM examples, 24 frontend tests, TypeScript/build,
+  focused lint and browser regression (304px, both themes, desktop/mobile,
+  persistence, failure rollback, keyboard, loading/retry) passed.
+- U5 I1 correction was inapplicable: this fork uses one installation account in
+  `RuntimeConfig.account` (a Hash), with no `account_id` in the custom definition
+  table, including production. Adding the proposed predicate would cause SQL
+  failures. The existing installation scope is retained and tested for the
+  contact/deal-only catalog and private pipeline access. I2 rejects mixed PATCH
+  payloads with 422; I3–I6 remove repeated lookups and collection catalog queries.
+- **Deployment blocked before migration or service updates:** dispatching
+  `publish-vetorial.yml` on CRM main repeatedly returned HTTP 422,
+  `Actions has been disabled for this repository.` Permissions report
+  `enabled=true, allowed_actions=all` and workflow state is `active`.
+  Explicit workflow enable and permissions disable/enable did not restore runs;
+  original permissions were restored. No CRM image for this merge was produced.
+- Frontend publishing run:
+  https://github.com/ricardoisus/evo-ai-frontend-community/actions/runs/43119473155.
+  Do not deploy the frontend alone: its API needs the new CRM migration/code.
+- Private pre-deploy backup: `/root/evo_crm/backups/interface-u6-20261111`
+  on manager01 (0700 directory/0600 files). It contains a verified custom-format
+  dump of `evolution_crm` (`pg_restore -l`), Portainer DB, the three Portainer
+  composes and service specifications, rollback image digests and SHA256 manifest.
+  Refresh this backup immediately before any later deployment.
+- Current production/rollback CRM and Sidekiq:
+  `ghcr.io/ricardoisus/evo-ai-crm-community@sha256:892f9e265a19ac38ed3a262b8b7a4b52d89cb25764e1671a70c8f8115a5a9cfd`.
+  Frontend:
+  `ghcr.io/ricardoisus/evo-ai-frontend-community@sha256:89c46a856e2ab3d5edb4bea96b2a1033d3ce3f1c3894f54c1e765a9959b58997`.
+- Resume: repository owner checks the CRM Actions banner and re-enables runs if
+  offered; otherwise submits the 422/enabled/active evidence to GitHub Support.
+  Theo then publishes the merged CRM/frontend via CI, records both GHCR digests,
+  refreshes backup, runs only additive migration `20261112010000` before services,
+  updates Portainer stacks 77/78/83 pinned to digests, and checks 1/1, readiness,
+  frontend 200 and the new served bundle. Never recreate `evolution_crm`.
+- Rollback after a future attempt: update stacks 77/78/83 through Portainer with
+  the saved previous digests/compose; keep the additive columns, verify 1/1 and
+  health again. No rollback or database restore is needed for this U6 attempt:
+  production was not modified.
+- Ricardo's 2-minute authenticated check after the future deploy: open a board,
+  inspect fixed columns and independent scroll, open Personalizar cartões,
+  change visibility/order/density, save/reload, check a second pipeline and a
+  narrow viewport. Use no messages or conversation read actions for this check.
