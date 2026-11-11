@@ -116,3 +116,62 @@ images created on 2026-04-25 plus runtime patches applied to minified assets.
   inspect fixed columns and independent scroll, open Personalizar cartões,
   change visibility/order/density, save/reload, check a second pipeline and a
   narrow viewport. Use no messages or conversation read actions for this check.
+
+## Pipeline interface deployed — 2026-11-11 (U7)
+
+- This completes and supersedes the U6 deployment blocker above. CRM Actions
+  returned HTTP 422 despite enabled repository permissions; the approved U7
+  procedure built the merged commit outside Actions. Future CRM images in this
+  chain follow this procedure until Actions is available.
+- Source: CRM main merge `83d6a4eeda914c57ff7b8fea66058747ad86bb0e`
+  (CRM PR26), frontend merge `783a9511320f41f21bc2a8b2ec2e9d4b184aa43c`
+  (frontend PR13), component pointers already merged by monorepo PR7.
+- Clean CRM worktree; `docker buildx build --platform linux/amd64
+  -f docker/Dockerfile --build-arg RAILS_ENV=production
+  --build-arg BUNDLE_WITHOUT=development:test
+  --build-arg RAILS_SERVE_STATIC_FILES=true
+  --build-arg GIT_SHA=83d6a4eeda914c57ff7b8fea66058747ad86bb0e
+  --provenance=mode=max --sbom=true
+  --tag ghcr.io/ricardoisus/evo-ai-crm-community:vetorial-83d6a4e --push .`.
+  Same production arguments as `publish-vetorial.yml`; the mutable `vetorial`
+  alias was not moved. Local Docker credential helper stalled; an ephemeral
+  GHCR-only helper retrieved `gh auth token` in memory, without persisting it.
+- Portainer stacks 77/78 now use
+  `ghcr.io/ricardoisus/evo-ai-crm-community:vetorial-83d6a4e@sha256:11304de006796934ee29aa27d8f562103a4db4978197847d9393f9713b6ff49d`.
+  AMD64 manifest: `sha256:c27bbca39a13ae3184d6df66b16f3e2b4a55a9d422573d7954379a2bd39840b1`.
+- Stack83 now uses
+  `ghcr.io/ricardoisus/evo-ai-frontend-community:vetorial-783a951@sha256:ad3c967a2eed8761ce4333fe9a45a4daab09f0d19e5094e15565346fd5622d62`,
+  published by the successful frontend U6 workflow.
+- Renewed private backup on manager01:
+  `/root/evo_crm/backups/interface-u7-20261111` (0700/0600). Includes database
+  dump, Portainer DB, stack metadata/compose before and after, service specs
+  and SHA256 manifest. `pg_restore -l` verified the fresh `evolution_crm` dump.
+- Before updating services, a disposable container of the new CRM image on
+  worker01 ran `bundle exec rails db:migrate:up VERSION=20261112010000`,
+  sharing the existing CRM network and receiving its environment in memory.
+  Exit0; schema_migrations contains the version, pipelines now has JSONB
+  `card_configuration` NOT NULL/default `{}` and integer
+  `card_configuration_revision` NOT NULL/default0. No database recreation.
+- Updated CRM, then Sidekiq, then frontend through Portainer's stack PUT API,
+  preserving Env and all compose content except image references. All stacks
+  remain readable/editable; no Portainer password reset was needed.
+- All three rollouts completed, replicas1/1. Public readiness and frontend
+  HTTP200; internal checks recorded in the U7 delivery. Initial public502
+  during service startup resolved before acceptance. Browser login page
+  rendered at1440x900, zero page errors; new bundle `index-O8yGzbZ1.js` /
+  `index-BWWe-Rv6.css`. No authenticated production mutation or message test.
+- Application rollback: use Portainer PUT for stacks77/78/83 with saved
+  pre-deploy composes/Env. CRM+Sidekiq previous image:
+  `ghcr.io/ricardoisus/evo-ai-crm-community@sha256:892f9e265a19ac38ed3a262b8b7a4b52d89cb25764e1671a70c8f8115a5a9cfd`;
+  frontend previous image:
+  `ghcr.io/ricardoisus/evo-ai-frontend-community@sha256:89c46a856e2ab3d5edb4bea96b2a1033d3ce3f1c3894f54c1e765a9959b58997`.
+  Keep additive columns and new data; do not restore the dump routinely.
+  Verify completed rollouts,1/1 and health/frontend200. No rollback was needed.
+- Ricardo's2-minute check: open a pipeline, inspect equal columns and independent
+  scroll; open **Personalizar cartões**, change a field/order/density, save and
+  reload; check another pipeline and a narrow viewport. Do not open conversations
+  or send messages for this check. Authenticated production acceptance remains
+  pending Ricardo; synthetic regression was already completed by U6.
+- Evolution/channel/agent/calendar integrations unchanged; next stage is
+  `evo-agentes:C2`. Docker Desktop was closed before U7 and is closed again at
+  its end; local volumes and other stages' worktrees are preserved.
