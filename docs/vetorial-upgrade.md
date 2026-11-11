@@ -84,6 +84,8 @@ images created on 2026-04-25 plus runtime patches applied to minified assets.
   original permissions were restored. No CRM image for this merge was produced.
 - Frontend publishing run:
   https://github.com/ricardoisus/evo-ai-frontend-community/actions/runs/43119473155.
+  Completed successfully; immutable candidate
+  `ghcr.io/ricardoisus/evo-ai-frontend-community:vetorial-783a951@sha256:ad3c967a2eed8761ce4333fe9a45a4daab09f0d19e5094e15565346fd5622d62`.
   Do not deploy the frontend alone: its API needs the new CRM migration/code.
 - Private pre-deploy backup: `/root/evo_crm/backups/interface-u6-20261111`
   on manager01 (0700 directory/0600 files). It contains a verified custom-format
@@ -104,6 +106,12 @@ images created on 2026-04-25 plus runtime patches applied to minified assets.
   the saved previous digests/compose; keep the additive columns, verify 1/1 and
   health again. No rollback or database restore is needed for this U6 attempt:
   production was not modified.
+- Current production baseline checks (no deployment): CRM/Sidekiq/frontend 1/1,
+  internal readiness/frontend 200 and public readiness/frontend 200 (curl with
+  browser User-Agent). Current served bundle remains `index-CrSO_VVX.js` and
+  `index-BVTcnHuF.css`; the new candidate bundle was not served in production.
+- Local synthetic OAuth session was revoked after browser checks; Docker Desktop
+  was stopped, restoring its pre-K1 state. No production credentials were rotated.
 - Ricardo's 2-minute authenticated check after the future deploy: open a board,
   inspect fixed columns and independent scroll, open Personalizar cartões,
   change visibility/order/density, save/reload, check a second pipeline and a
