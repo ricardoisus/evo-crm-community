@@ -39,13 +39,47 @@
       }
     },
     {
+      "id": "body-route",
+      "name": "Requisicao tem corpo",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "needs-body",
+              "leftValue": "={{ $json.sendBody }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
       "id": "google",
       "name": "Google credencial existente",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        480,
-        0
+        720,
+        -80
       ],
       "parameters": {
         "method": "={{ $json.method }}",
@@ -55,9 +89,55 @@
         "sendQuery": true,
         "specifyQuery": "json",
         "jsonQuery": "={{ JSON.stringify($json.query) }}",
-        "sendBody": "={{ ['POST','PATCH'].includes($json.method) }}",
+        "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ $json.body }}",
+        "options": {
+          "timeout": 12000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        },
+        "contentType": "json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "8plZrE3YozmTzatm",
+          "name": "Google Calendar account | Ricardo Vetorial"
+        }
+      }
+    },
+    {
+      "id": "google-no-body",
+      "name": "Google sem corpo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        160
+      ],
+      "parameters": {
+        "method": "={{ $json.method }}",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "sendQuery": true,
+        "specifyQuery": "json",
+        "jsonQuery": "={{ JSON.stringify($json.query) }}",
+        "sendBody": false,
         "options": {
           "timeout": 12000,
           "response": {
@@ -92,12 +172,12 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        720,
+        960,
         0
       ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify($json.statusCode >= 400 ? {...($json.body || {}), _request: {method: $(\"Requisicao restrita\").first().json.method, bodyKeys: Object.keys($(\"Requisicao restrita\").first().json.body || {}), sendBody: $(\"Requisicao restrita\").first().json.sendBody}} : ($json.body || {})) }}",
+        "responseBody": "={{ JSON.stringify($json.body || {}) }}",
         "options": {
           "responseCode": "={{ $json.statusCode }}"
         }
@@ -120,7 +200,7 @@
       "main": [
         [
           {
-            "node": "Google credencial existente",
+            "node": "Requisicao tem corpo",
             "type": "main",
             "index": 0
           }
@@ -128,6 +208,35 @@
       ]
     },
     "Google credencial existente": {
+      "main": [
+        [
+          {
+            "node": "Recibo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Requisicao tem corpo": {
+      "main": [
+        [
+          {
+            "node": "Google credencial existente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Google sem corpo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google sem corpo": {
       "main": [
         [
           {
