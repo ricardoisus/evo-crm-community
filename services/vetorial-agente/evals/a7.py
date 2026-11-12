@@ -72,6 +72,8 @@ def scenario_checks(result):
         extra['no_human_impersonation_claim']=not any(x in public for x in ['sou uma pessoa','sou humano','pessoa real'])
     if n==13:
         extra['nutrition_recorded']=any('nutri' in str(u.get('especialidade','')).casefold() for u in updates)
+        first_updates=[a['args'].get('campos',a['args']) for a in turns[0]['actions'] if a['name']=='atualizar_negocio']
+        extra['profession_and_high_interest_before_explanation']=any('nutri' in str(u.get('especialidade','')).casefold() and u.get('interesse_nivel')=='alto' for u in first_updates)
         extra['explanation_before_silence']=bool(outputs and outputs[0].get('acao')=='responder' and outputs[0].get('mensagens'))
     if n==30:
         extra['next_action_recorded']=any(u.get('proxima_acao') for u in updates)

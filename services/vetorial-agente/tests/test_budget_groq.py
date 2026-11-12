@@ -172,3 +172,15 @@ def test_legacy_runner_refuses_unmetered_paid_jobs(tmp_path,monkeypatch):
         '--models','gpt-6-luna','--scenarios','1'])
     with pytest.raises(RuntimeError,match='sem medidor desabilitado'):
         main()
+
+
+@pytest.mark.parametrize('first_interest',[None,'medio'])
+def test_c13_requires_profession_and_high_interest_before_first_explanation(first_interest):
+    from evals.a7 import scenario_checks
+    first=[] if first_interest is None else [{'name':'atualizar_negocio','args':{'especialidade':'Nutrição','interesse_nivel':first_interest}}]
+    row={'scenario':'C13','status':'APROVADO_AUTOMATICO','checks':{},'public_output_stub':['Atendemos médicos.'],
+         'turns':[{'analyst':False,'output':{'acao':'responder','mensagens':['Atendemos médicos.']},'actions':first},
+                  {'analyst':False,'output':{'acao':'encerrar_silencioso','mensagens':[]},'actions':[{'name':'atualizar_negocio','args':{'especialidade':'Nutrição','interesse_nivel':'alto'}}]}]}
+    scenario_checks(row)
+    assert not row['checks']['profession_and_high_interest_before_explanation']
+    assert row['status']=='FALHA_AUTOMATICA'
