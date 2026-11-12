@@ -55,9 +55,9 @@
         "sendQuery": true,
         "specifyQuery": "json",
         "jsonQuery": "={{ JSON.stringify($json.query) }}",
-        "sendBody": "={{ $json.sendBody }}",
+        "sendBody": "={{ ['POST','PATCH'].includes($json.method) }}",
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "jsonBody": "={{ $json.body }}",
         "options": {
           "timeout": 12000,
           "response": {
@@ -97,7 +97,7 @@
       ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify($json.statusCode >= 400 ? {...($json.body || {}), _request: {method: $(\"Requisicao restrita\").item.json.method, bodyKeys: Object.keys($(\"Requisicao restrita\").item.json.body || {}), sendBody: $(\"Requisicao restrita\").item.json.sendBody}} : ($json.body || {})) }}",
+        "responseBody": "={{ JSON.stringify($json.statusCode >= 400 ? {...($json.body || {}), _request: {method: $(\"Requisicao restrita\").first().json.method, bodyKeys: Object.keys($(\"Requisicao restrita\").first().json.body || {}), sendBody: $(\"Requisicao restrita\").first().json.sendBody}} : ($json.body || {})) }}",
         "options": {
           "responseCode": "={{ $json.statusCode }}"
         }
