@@ -1,0 +1,113 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Saída do Analista do Pipeline v1.0",
+  "description": "Estrutura de retorno do agente analista. Enviada ao CRM após cada análise.",
+  "type": "object",
+  "required": ["resumo", "campos_atualizados", "etiquetas", "etapa_sugerida", "confianca", "justificativa"],
+  "properties": {
+    "resumo": {
+      "type": "string",
+      "description": "Resumo da conversa em até 5 linhas. Quem é o lead, o que busca, onde parou, próximo passo óbvio."
+    },
+    "campos_atualizados": {
+      "type": "object",
+      "description": "Campos do negócio a atualizar. Enviar apenas os campos com evidência; não sobrescrever com null se já preenchido.",
+      "properties": {
+        "especialidade": { "type": ["string", "null"] },
+        "cidade": { "type": ["string", "null"] },
+        "atendimento_particular": { "type": ["boolean", "null"] },
+        "anos_particular": { "type": ["number", "null"] },
+        "contexto_clinico": { "type": ["string", "null"] },
+        "objecoes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "interesse_nivel": {
+          "type": ["string", "null"],
+          "enum": ["alto", "medio", "baixo", null]
+        },
+        "origem": { "type": ["string", "null"] },
+        "proxima_acao": { "type": ["string", "null"] }
+      }
+    },
+    "mql": {
+      "type": "object",
+      "description": "Avaliação de qualificação MQL com base na transcrição.",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["mql", "em_desenvolvimento", "sem_aderencia", "inconclusivo"],
+          "description": "mql=todos os 3 critérios elegíveis; em_desenvolvimento=atendimento particular <1 ano ou estruturando; sem_aderencia=critério impeditivo; inconclusivo=dados insuficientes"
+        },
+        "criterios": {
+          "type": "object",
+          "properties": {
+            "profissao": {
+              "type": "string",
+              "enum": ["elegivel", "nao_elegivel", "inconclusivo"]
+            },
+            "atendimento_particular": {
+              "type": "string",
+              "enum": ["elegivel", "nao_elegivel", "inconclusivo"]
+            },
+            "contexto_clinico": {
+              "type": "string",
+              "enum": ["elegivel", "nao_elegivel", "inconclusivo"]
+            }
+          }
+        },
+        "evidencia": {
+          "type": "string",
+          "description": "Trecho da transcrição que sustenta a avaliação."
+        }
+      }
+    },
+    "etiquetas": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "mql-declarado",
+          "reuniao-agendada",
+          "sem-aderencia",
+          "objecao-preco",
+          "objecao-tempo",
+          "objecao-ja-tentei",
+          "pediu-humano",
+          "fora-de-escopo",
+          "aguardando-lead",
+          "retomada",
+          "spam"
+        ]
+      },
+      "description": "Apenas etiquetas com evidência na transcrição."
+    },
+    "etapa_sugerida": {
+      "type": ["string", "null"],
+      "enum": [
+        "Triagem MQL",
+        "Avaliação humana",
+        "SQL",
+        "Reunião agendada",
+        "Proposta",
+        "Ganho",
+        "Perdido / Nutrição",
+        null
+      ],
+      "description": "Etapa sugerida. null = manter etapa atual. Nunca rebaixar se etapa_definida_por_humano=true."
+    },
+    "confianca": {
+      "type": "string",
+      "enum": ["alta", "media", "baixa"],
+      "description": "Confiança na sugestão de etapa. Baixa = dados insuficientes na transcrição."
+    },
+    "justificativa": {
+      "type": "string",
+      "description": "Uma linha explicando por que esta etapa foi sugerida, com referência à evidência."
+    },
+    "nota_privada": {
+      "type": ["string", "null"],
+      "description": "Nota para gravar internamente no Evo CRM. Visível apenas para a equipe, nunca para o lead."
+    }
+  }
+}
