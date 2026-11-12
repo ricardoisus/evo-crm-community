@@ -252,7 +252,7 @@ def main():
     p.add_argument("--media-dir", type=Path, required=True)
     p.add_argument("--replace", action="store_true")
     p.add_argument("--workers", type=int, default=1, choices=range(1, 5))
-    p.add_argument("--models", nargs="+", default=["gpt-6-astra", "gpt-6.1-sol"])
+    p.add_argument("--models", nargs="+", default=["gpt-6-luna", "gpt-6.1-sol"])
     p.add_argument("--scenarios", nargs="+", type=int, default=list(range(1, 31)))
     args = p.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -262,7 +262,9 @@ def main():
         for n in args.scenarios
         if args.replace or not (args.output / f"{model}-{n:02}.json").exists()
     ]
-    # Independent synthetic conversations only; never parallel production workers.
+    if jobs:
+        raise RuntimeError("Executor antigo sem medidor desabilitado; use python -m evals.a7 com teto persistente")
+    # Read-only regeneration of historical summaries; paid work uses evals.a7.
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = {
             pool.submit(evaluate, model, n, args.media_dir): (model, n)
@@ -286,7 +288,7 @@ def main():
         times = [t for r in rows for t in r["latency_seconds"]]
         usages = [u for r in rows for u in r["usage"]]
         cost = 0
-        rates = {"gpt-6-astra": (10, 50, 1, 12.5), "gpt-6.1-sol": (2, 10, 0.1, 2.5)}[
+        rates = {"gpt-6-luna": (0.1, 0.5, 0.01, 0.125), "gpt-6-astra": (10, 50, 1, 12.5), "gpt-6.1-sol": (2, 10, 0.1, 2.5)}[
             model
         ]
         for u in usages:

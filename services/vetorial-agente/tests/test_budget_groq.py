@@ -163,3 +163,11 @@ def test_readable_conversations_are_generated_without_credentials_or_api(tmp_pat
     monkeypatch.setattr('sys.argv',['evals.a7','--output',str(tmp_path),'--phase','render'])
     main()
     assert 'INCONCLUSIVO_EXECUCAO' in (tmp_path/'conversas.md').read_text()
+
+
+def test_legacy_runner_refuses_unmetered_paid_jobs(tmp_path,monkeypatch):
+    from evals.run import main
+    monkeypatch.setattr('sys.argv',['evals.run','--output',str(tmp_path),'--media-dir',str(tmp_path),
+        '--models','gpt-6-luna','--scenarios','1'])
+    with pytest.raises(RuntimeError,match='sem medidor desabilitado'):
+        main()
