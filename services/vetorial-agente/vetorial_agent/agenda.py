@@ -1,5 +1,8 @@
 """Calendar policy and durable receipts; Google OAuth remains exclusively in n8n.
-A singleton Postgres row serializes this agent's free/busy + writes. Google manual
+Availability comes from Calendly (event type of the 45-min diagnosis meeting), which
+already applies Ricardo's hours and his connected-calendar conflicts. Writes go to the
+Google calendar fixed in the n8n gateway, after a Calendly + Google free/busy recheck.
+A singleton Postgres row serializes this agent's checks + writes. Google manual
 edits can still race (Google has no conditional free/busy insert); see runbook.
 """
 
@@ -62,12 +65,90 @@ class GoogleGateway:
             raise RuntimeError("agenda_indisponivel") from None
 
 
-class Agenda:
-    def __init__(self, store, google, windows=(), clock=None, authorize=None):
-        self.store, self.google = store, google
-        # Explicit operator-approved weekly hours; empty means no availability.
-        # [{weekday:0,start:'09:00',end:'12:00'}], Sao Paulo time. Never default Ricardo's hours.
+def _iso(dt):
+    return dt.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+class CalendlyAvailability:
+    """Read-only Calendly source. Fixed API host and event type; never a URL from the model.
+    Any HTTP/parse failure fails closed (no slots offered, no booking)."""
+
+    BASE = "https://api.calendly.com"
+    MAX_RANGE = timedelta(days=7) - timedelta(seconds=1)  # Calendly rejects > 7 days
+
+    def __init__(self, token="", event_type="", get=None, now=None):
+        self.token, self.event_type = token, event_type
+        self.get = get or httpx.get
+        self.now = now or (lambda: datetime.now(timezone.utc))
+
+    def slots(self, lo, hi):
+        if len(self.token) < 20 or not re.fullmatch(
+            re.escape(self.BASE) + r"/event_types/[0-9a-f-]{36}", self.event_type
+        ):
+            raise RuntimeError("agenda_indisponivel")
+        # Calendly only answers for the future; keep a small margin for request latency.
+        lo = max(lo, self.now() + timedelta(minutes=1))
+        found = set()
+        while lo < hi:
+            end = min(hi, lo + self.MAX_RANGE)
+            try:
+                r = self.get(
+                    self.BASE + "/event_type_available_times",
+                    params={
+                        "event_type": self.event_type,
+                        "start_time": _iso(lo),
+                        "end_time": _iso(end),
+                    },
+                    # Cloudflare answers 403 to default library user agents.
+                    headers={
+                        "Authorization": "Bearer " + self.token,
+                        "User-Agent": "vetorial-agente/1.0",
+                        "Accept": "application/json",
+                    },
+                    timeout=15,
+                    follow_redirects=False,
+                )
+                if r.status_code != 200:
+                    raise RuntimeError("agenda_indisponivel")
+                for item in r.json()["collection"]:
+                    if item.get("status") == "available":
+                        found.add(_iso(datetime.fromisoformat(item["start_time"].replace("Z", "+00:00"))))
+            except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
+                raise RuntimeError("agenda_indisponivel") from None
+            lo = end
+        return sorted(found)
+
+
+class FixedAvailability:
+    """Explicit weekly fixtures for tests/evals ([{weekday, start, end}], São Paulo).
+    Never a default for Ricardo's real hours."""
+
+    def __init__(self, windows):
         self.windows = windows
+
+    def slots(self, lo, hi):
+        tz = ZoneInfo("America/Sao_Paulo")
+        starts = []
+        day = lo.astimezone(tz).date()
+        while datetime.combine(day, datetime.min.time(), tz) < hi:
+            for w in self.windows:
+                if day.weekday() != w["weekday"]:
+                    continue
+                start = datetime.fromisoformat(f"{day}T{w['start']}").replace(tzinfo=tz)
+                end = datetime.fromisoformat(f"{day}T{w['end']}").replace(tzinfo=tz)
+                while start + timedelta(minutes=45) <= end:
+                    if lo <= start < hi:
+                        starts.append(_iso(start))
+                    start += timedelta(minutes=45)
+            day += timedelta(days=1)
+        return sorted(set(starts))
+
+
+class Agenda:
+    def __init__(self, store, google, availability=None, clock=None, authorize=None):
+        self.store, self.google = store, google
+        # Calendly in production; FixedAvailability only in tests. None means closed.
+        self.availability = availability
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.authorize = authorize or (lambda owner, key: False)
 
@@ -93,10 +174,10 @@ class Agenda:
                 return previous["result"]
             if not self.authorize(owner, key):
                 return {"sucesso": False, "erro": "estado_ou_politica", "slots": []}
-            if not self.windows and name != "cancelar":
+            if self.availability is None and name != "cancelar":
                 return {
                     "sucesso": False,
-                    "erro": "janela_comercial_nao_configurada",
+                    "erro": "disponibilidade_nao_configurada",
                     "slots": [],
                 }
             # Unexpected/timeouts roll back local tx. Stable remote ID + get on retry reconciles.
@@ -107,30 +188,20 @@ class Agenda:
             c.execute(receipts.insert().values(key=key, payload=payload, result=result))
             return result
 
-    @staticmethod
-    def iso(dt):
-        return (
-            dt.astimezone(timezone.utc)
-            .isoformat(timespec="seconds")
-            .replace("+00:00", "Z")
-        )
+    iso = staticmethod(_iso)
 
-    def candidates(self):
+    def candidates(self, lo, hi):
+        """Real availability in [lo, hi), at least 2h ahead and within the 14-day window."""
         now = self.clock()
-        tz = ZoneInfo("America/Sao_Paulo")
-        starts = []
-        for i in range(15):
-            day = (now.astimezone(tz) + timedelta(days=i)).date()
-            for w in self.windows:
-                if day.weekday() != w["weekday"]:
-                    continue
-                start = datetime.fromisoformat(f"{day}T{w['start']}").replace(tzinfo=tz)
-                end = datetime.fromisoformat(f"{day}T{w['end']}").replace(tzinfo=tz)
-                while start + timedelta(minutes=45) <= end:
-                    if start > now + timedelta(hours=2):
-                        starts.append(self.iso(start))
-                    start += timedelta(minutes=45)
-        return sorted(set(starts))
+        lo = max(lo, now + timedelta(hours=2))
+        hi = min(hi, now + timedelta(days=15))
+        if hi <= lo:
+            return []
+        return [
+            s
+            for s in self.availability.slots(lo, hi)
+            if datetime.fromisoformat(s.replace("Z", "+00:00")) >= lo
+        ]
 
     def period(self, text):
         text = text.lower().strip()
@@ -208,13 +279,8 @@ class Agenda:
                     "sucesso": False,
                     "erro": "periodo_nao_suportado_use_esta_ou_proxima_semana",
                 }
-            available = []
-            for s in self.candidates():
-                dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-                if bounds[0] <= dt < bounds[1] and self.free(s):
-                    available.append(s)
-                if len(available) == 8:
-                    break
+            # Calendly already excludes Ricardo's busy time; Google is rechecked on booking.
+            available = self.candidates(*bounds)[:8]
             data = dict(
                 slots=available, expires=(now + timedelta(minutes=10)).timestamp()
             )
@@ -235,7 +301,7 @@ class Agenda:
                     }
                     for s in available
                 ],
-                "janela_consultada": "Próximos 14 dias, apenas expediente configurado; selecione dentro desta janela.",
+                "janela_consultada": "Próximos 14 dias, horários livres da agenda de Ricardo; selecione dentro desta janela.",
             }
         email = args["email"].lower()
         owned = list(
@@ -284,18 +350,16 @@ class Agenda:
         if name == "agendar" and remote and remote.get("status") != "cancelled":
             return {"sucesso": False, "erro": "reuniao_existente_use_remarcar"}
         offer = c.execute(select(offers.c.data).where(offers.c.owner == owner)).scalar()
-        if (
-            not offer
-            or offer["expires"] < now.timestamp()
-            or slot not in offer["slots"]
-            or slot not in self.candidates()
-        ):
+        if not offer or offer["expires"] < now.timestamp() or slot not in offer["slots"]:
             return {"sucesso": False, "erro": "consultar_horarios_antes"}
+        start = datetime.fromisoformat(slot.replace("Z", "+00:00"))
+        # Recheck both sources: Calendly (hours + its conflicts) and the target Google calendar.
+        if slot not in self.candidates(start, start + timedelta(minutes=45)):
+            return {"sucesso": False, "erro": "horário indisponível"}
         if not self.free(slot, ident if name == "remarcar" else None):
             return {"sucesso": False, "erro": "horário indisponível"}
         if not self.authorize(owner, key):
             return {"sucesso": False, "erro": "estado_ou_politica"}
-        start = datetime.fromisoformat(slot.replace("Z", "+00:00"))
         body = {
             "status": "confirmed",
             "summary": "Diagnóstico Vetorial",

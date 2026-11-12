@@ -1,8 +1,9 @@
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import httpx
 import pytest
 from vetorial_agent.store import Store
-from vetorial_agent.agenda import Agenda
+from vetorial_agent.agenda import Agenda, CalendlyAvailability, FixedAvailability
 from vetorial_agent.calendar import label_br
 
 SLOT = "2026-11-18T17:00:00Z"
@@ -60,10 +61,12 @@ def rig(tmp_path):
     agenda = Agenda(
         store,
         google,
-        [
-            {"weekday": 2, "start": "14:00", "end": "16:00"},
-            {"weekday": 3, "start": "14:00", "end": "16:00"},
-        ],
+        FixedAvailability(
+            [
+                {"weekday": 2, "start": "14:00", "end": "16:00"},
+                {"weekday": 3, "start": "14:00", "end": "16:00"},
+            ]
+        ),
         clock=lambda: datetime(2026, 11, 11, 12, tzinfo=timezone.utc),
         authorize=lambda o, k: True,
     )
@@ -142,11 +145,12 @@ def test_replay_and_collision(rig):
         book(a, slot=OTHER)
 
 
-def test_no_windows_no_credentials_and_no_consent_are_closed(rig):
+def test_no_availability_no_credentials_and_no_consent_are_closed(rig):
     a, g = rig
-    a.windows = []
+    availability, a.availability = a.availability, None
     assert not offer(a)["slots"]
     assert g.mutated == 0
+    a.availability = availability
     a.authorize = lambda o, k: False
     assert not book(a)["sucesso"]
 
@@ -173,3 +177,119 @@ def test_cross_conversation_conflict_and_restart(rig):
     a.store = Store(str(a.store.engine.url))
     assert book(a)["sucesso"]
     assert g.mutated == 1
+
+
+ET = "https://api.calendly.com/event_types/d604c9e1-b09a-4d71-adec-bf1f1532ba9c"
+NOW = datetime(2026, 11, 11, 12, tzinfo=timezone.utc)
+
+
+class CalendlyResponse:
+    def __init__(self, status, body):
+        self.status_code, self.body = status, body
+
+    def json(self):
+        return self.body
+
+
+class CalendlyStub:
+    """Fake Calendly HTTP: records requests, answers available_times like the real API."""
+
+    def __init__(self, starts, status=200):
+        self.starts, self.status, self.requests = list(starts), status, []
+
+    def __call__(self, url, params, headers, timeout, follow_redirects):
+        self.requests.append(dict(url=url, params=params, headers=headers))
+        lo = datetime.fromisoformat(params["start_time"].replace("Z", "+00:00"))
+        hi = datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
+        assert hi - lo <= timedelta(days=7)
+        assert lo > NOW
+        items = [
+            {"status": "available", "start_time": s.replace("Z", ".000000Z"), "invitees_remaining": 1}
+            for s in self.starts
+            if lo <= datetime.fromisoformat(s.replace("Z", "+00:00")) < hi
+        ]
+        return CalendlyResponse(self.status, {"collection": items})
+
+
+def calendly(starts, status=200):
+    stub = CalendlyStub(starts, status)
+    return CalendlyAvailability("x" * 40, ET, get=stub, now=lambda: NOW), stub
+
+
+@pytest.fixture
+def crig(tmp_path):
+    store = Store("sqlite:///" + str(tmp_path / "agenda.db"))
+    store.migrate()
+    google = GoogleStub()
+    source, stub = calendly([SLOT, OTHER, "2026-11-24T13:00:00Z"])
+    agenda = Agenda(store, google, source, clock=lambda: NOW, authorize=lambda o, k: True)
+    return agenda, google, stub
+
+
+def test_calendly_request_is_fixed_bearer_with_explicit_user_agent_and_chunked(crig):
+    a, g, stub = crig
+    r = a.call("c", "o", "consultar_horarios", {"periodo": "próximos dias"})
+    assert [s["inicio"] for s in r["slots"]] == [SLOT, OTHER, "2026-11-24T13:00:00Z"]
+    assert len(stub.requests) == 3  # 15 days split into ≤7-day Calendly ranges
+    for req in stub.requests:
+        assert req["url"] == "https://api.calendly.com/event_type_available_times"
+        assert req["params"]["event_type"] == ET
+        assert req["headers"]["Authorization"] == "Bearer " + "x" * 40
+        assert "python" not in req["headers"]["User-Agent"].lower()
+    assert g.mutated == 0
+
+
+def test_calendly_period_and_booking_go_to_google(crig):
+    a, g, stub = crig
+    r = a.call("c", "o", "consultar_horarios", {"periodo": "2026-11-19"})
+    assert [s["inicio"] for s in r["slots"]] == [OTHER]
+    assert a.call("c", "b", "agendar", dict(horario=OTHER, nome="S", email="teste@example.invalid"))["sucesso"]
+    assert g.mutated == 1
+    assert list(g.events.values())[0]["start"]["dateTime"] == OTHER
+
+
+def test_slot_taken_in_calendly_after_offer_never_books(crig):
+    a, g, stub = crig
+    offer(a)
+    stub.starts.remove(SLOT)
+    assert book(a)["erro"] == "horário indisponível"
+    assert g.mutated == 0
+
+
+def test_google_busy_blocks_even_when_calendly_lists_slot(crig):
+    a, g, stub = crig
+    offer(a)
+    g.busy = True
+    assert book(a)["erro"] == "horário indisponível"
+    assert g.mutated == 0
+
+
+@pytest.mark.parametrize("status", [401, 403, 429, 500])
+def test_calendly_errors_fail_closed(tmp_path, status):
+    store = Store("sqlite:///" + str(tmp_path / "agenda.db"))
+    store.migrate()
+    source, _ = calendly([SLOT], status)
+    a = Agenda(store, GoogleStub(), source, clock=lambda: NOW, authorize=lambda o, k: True)
+    r = offer(a)
+    assert r["erro"] == "agenda_indisponivel" and r["slots"] == []
+
+
+@pytest.mark.parametrize(
+    "token,event_type",
+    [("", ET), ("x" * 40, ""), ("x" * 40, "https://evil.example/event_types/d604c9e1-b09a-4d71-adec-bf1f1532ba9c")],
+)
+def test_calendly_misconfiguration_fails_closed_without_request(token, event_type):
+    stub = CalendlyStub([SLOT])
+    source = CalendlyAvailability(token, event_type, get=stub, now=lambda: NOW)
+    with pytest.raises(RuntimeError):
+        source.slots(NOW, NOW + timedelta(days=1))
+    assert stub.requests == []
+
+
+def test_calendly_network_error_fails_closed():
+    def boom(*a, **k):
+        raise httpx.ConnectError("down")
+
+    source = CalendlyAvailability("x" * 40, ET, get=boom, now=lambda: NOW)
+    with pytest.raises(RuntimeError):
+        source.slots(NOW, NOW + timedelta(days=1))
