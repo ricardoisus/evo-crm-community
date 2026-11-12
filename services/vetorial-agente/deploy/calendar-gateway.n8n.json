@@ -1,0 +1,140 @@
+{
+  "name": "Vetorial - Agenda restrita v1 (inativo A12)",
+  "active": false,
+  "nodes": [
+    {
+      "id": "ingress",
+      "name": "Agenda privada",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vetorial-calendar-private-v1",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURE_HEADER_AUTH",
+          "name": "Vetorial Calendar Gateway"
+        }
+      }
+    },
+    {
+      "id": "request",
+      "name": "Requisicao restrita",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// n8n Code node, after a Webhook with headerAuth. Never accept calendar IDs/URLs.\nconst input = $json.body;\nconst calendar = 'CONFIGURE_CALENDAR_TRABALHO_VETORIAL';\nif (calendar.startsWith('CONFIGURE_')) throw new Error('Calendar not configured');\nconst ops = ['get','list','freebusy','insert','patch','delete'];\nif (!input || !ops.includes(input.op)) throw new Error('Invalid operation');\nconst base = 'https://www.googleapis.com/calendar/v3';\nconst events = `${base}/calendars/${encodeURIComponent(calendar)}/events`;\nconst id = input.id;\nif (['get','patch','delete'].includes(input.op) && !/^[0-9a-f]{40}$/.test(id || '')) throw new Error('Invalid event id');\nconst methods = { get:'GET',list:'GET',freebusy:'POST',insert:'POST',patch:'PATCH',delete:'DELETE' };\nlet url = input.op==='freebusy' ? `${base}/freeBusy` : events;\nlet query = {};\nlet body = {};\nif (['get','patch','delete'].includes(input.op)) url += '/' + id;\nif (['list','freebusy'].includes(input.op)) {\n  const lo = Date.parse(input.timeMin), hi = Date.parse(input.timeMax);\n  if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo || hi-lo > 2700000) throw new Error('Invalid interval');\n  if (input.op === 'list') query={timeMin:input.timeMin,timeMax:input.timeMax,singleEvents:true,showDeleted:false,maxResults:2500};\n  else body={timeMin:input.timeMin,timeMax:input.timeMax,timeZone:'America/Sao_Paulo',items:[{id:calendar}]};\n}\nif (['insert','patch'].includes(input.op)) {\n  const b = input.body;\n  if (!b || Date.parse(b.end?.dateTime)-Date.parse(b.start?.dateTime)!==2700000 ||\n      !Array.isArray(b.attendees) || b.attendees.length!==1 || !b.extendedProperties?.private?.owner ||\n      b.conferenceData?.createRequest?.conferenceSolutionKey?.type!=='hangoutsMeet') throw new Error('Invalid appointment');\n  if (input.op==='insert' && !/^[0-9a-f]{40}$/.test(b.id || '')) throw new Error('Invalid event id');\n  body={summary:'Diagnóstico Vetorial',start:b.start,end:b.end,attendees:b.attendees,\n        extendedProperties:{private:{owner:b.extendedProperties.private.owner}},conferenceData:b.conferenceData,status:'confirmed'};\n  if (input.op==='insert') body.id=b.id;\n  query={sendUpdates:'all',conferenceDataVersion:1};\n}\nif (input.op==='delete') query={sendUpdates:'all'};\nreturn [{json:{method:methods[input.op],url,query,body,sendBody:['insert','patch','freebusy'].includes(input.op)}}];\n"
+      }
+    },
+    {
+      "id": "google",
+      "name": "Google credencial existente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "method": "={{ $json.method }}",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "sendQuery": true,
+        "specifyQuery": "json",
+        "jsonQuery": "={{ JSON.stringify($json.query) }}",
+        "sendBody": "={{ $json.sendBody }}",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 12000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "8plZrE3YozmTzatm",
+          "name": "Google Calendar account | Ricardo Vetorial"
+        }
+      }
+    },
+    {
+      "id": "reply",
+      "name": "Recibo",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.body || {}) }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Agenda privada": {
+      "main": [
+        [
+          {
+            "node": "Requisicao restrita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Requisicao restrita": {
+      "main": [
+        [
+          {
+            "node": "Google credencial existente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google credencial existente": {
+      "main": [
+        [
+          {
+            "node": "Recibo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "saveExecutionProgress": false
+  },
+  "pinData": {}
+}

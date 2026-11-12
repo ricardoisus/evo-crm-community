@@ -1,0 +1,233 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Contrato de ações — Ricardo IA v1.0",
+  "description": "Ações que o agente pode chamar. Nomes exatos; o runtime implementa.",
+  "definitions": {
+    "iso8601_utc": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+      "description": "Horário em UTC, formato ISO 8601 (ex: 2026-11-18T17:00:00Z)"
+    }
+  },
+  "actions": {
+    "consultar_horarios": {
+      "description": "Consulta horários livres na agenda de Ricardo. Retorna lista de slots disponíveis. Chame antes de oferecer opções ao lead.",
+      "parameters": {
+        "type": "object",
+        "required": ["periodo"],
+        "properties": {
+          "periodo": {
+            "type": "string",
+            "description": "Descrição do período desejado (ex: 'próxima semana', 'entre 18 e 25 de novembro de 2026')"
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "inicio": { "$ref": "#/definitions/iso8601_utc" },
+                "fim": { "$ref": "#/definitions/iso8601_utc" },
+                "label_br": {
+                  "type": "string",
+                  "description": "Rótulo em português para exibir ao lead (ex: 'terça-feira, 18 de novembro, às 14h')"
+                }
+              },
+              "required": ["inicio", "fim", "label_br"]
+            }
+          }
+        },
+        "required": ["slots"]
+      }
+    },
+    "agendar": {
+      "description": "Agenda reunião de diagnóstico de 45 min no Google Calendar 'Trabalho | Ag. Vetorial', cria Google Meet e envia convite ao e-mail do lead.",
+      "parameters": {
+        "type": "object",
+        "required": ["horario", "nome", "email"],
+        "properties": {
+          "horario": {
+            "$ref": "#/definitions/iso8601_utc",
+            "description": "Início da reunião em UTC"
+          },
+          "nome": {
+            "type": "string",
+            "description": "Nome completo do lead"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "E-mail do lead para receber o convite"
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "sucesso": { "type": "boolean" },
+          "horario_confirmado": { "$ref": "#/definitions/iso8601_utc" },
+          "meet_link": {
+            "type": "string",
+            "description": "URL do Google Meet (nunca exibir ao lead — o convite chega por e-mail)"
+          },
+          "erro": {
+            "type": "string",
+            "description": "Presente apenas se sucesso=false. Ex: 'horário indisponível'"
+          }
+        },
+        "required": ["sucesso"]
+      }
+    },
+    "remarcar": {
+      "description": "Remarca reunião existente para novo horário. Cancela o convite antigo e cria novo.",
+      "parameters": {
+        "type": "object",
+        "required": ["email", "novo_horario"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "E-mail do lead usado no agendamento original"
+          },
+          "novo_horario": {
+            "$ref": "#/definitions/iso8601_utc",
+            "description": "Novo horário desejado em UTC"
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "sucesso": { "type": "boolean" },
+          "horario_confirmado": { "$ref": "#/definitions/iso8601_utc" },
+          "erro": { "type": "string" }
+        },
+        "required": ["sucesso"]
+      }
+    },
+    "cancelar": {
+      "description": "Cancela reunião agendada e remove o convite do calendário.",
+      "parameters": {
+        "type": "object",
+        "required": ["email"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "E-mail do lead usado no agendamento"
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "sucesso": { "type": "boolean" },
+          "erro": { "type": "string" }
+        },
+        "required": ["sucesso"]
+      }
+    },
+    "atualizar_negocio": {
+      "description": "Atualiza campos do negócio no Evo CRM. Chame ao coletar dados relevantes. Nunca sobrescreva campos preenchidos por humano com valor vazio.",
+      "parameters": {
+        "type": "object",
+        "minProperties": 1,
+        "properties": {
+          "especialidade": {
+            "type": "string",
+            "description": "Especialidade médica (ex: 'Ginecologia', 'Nutrologia', 'Clínica Geral')"
+          },
+          "cidade": {
+            "type": "string",
+            "description": "Cidade onde o médico atende"
+          },
+          "atendimento_particular": {
+            "type": "boolean",
+            "description": "Confirma que atende pacientes particulares"
+          },
+          "anos_particular": {
+            "type": "number",
+            "description": "Anos atendendo particular (aproximado)"
+          },
+          "contexto_clinico": {
+            "type": "string",
+            "description": "Contexto clínico principal (ex: 'saúde hormonal feminina', 'reprodução humana', 'longevidade')"
+          },
+          "objecoes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Objeções mencionadas pelo lead"
+          },
+          "interesse_nivel": {
+            "type": "string",
+            "enum": ["alto", "medio", "baixo"],
+            "description": "Nível de interesse percebido"
+          },
+          "origem": {
+            "type": "string",
+            "description": "Como o lead chegou (ex: 'anúncio Meta', 'indicação', 'grupo WhatsApp')"
+          },
+          "proxima_acao": {
+            "type": "string",
+            "description": "Próxima ação planejada para este lead"
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "sucesso": { "type": "boolean" },
+          "erro": { "type": "string" }
+        },
+        "required": ["sucesso"]
+      }
+    },
+    "transferir_para_ricardo": {
+      "description": "Pausa o agente nesta conversa e notifica Ricardo. O agente só retoma se Ricardo atribuir de volta ao bot ou aplicar etiqueta 'ia-ativa'.",
+      "parameters": {
+        "type": "object",
+        "required": ["motivo"],
+        "properties": {
+          "motivo": {
+            "type": "string",
+            "description": "Motivo da transferência (interno, não enviado ao lead)"
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "sucesso": { "type": "boolean" },
+          "erro": { "type": "string" }
+        },
+        "required": ["sucesso"]
+      }
+    }
+  },
+  "output_schema": {
+    "title": "Saída estruturada do agente",
+    "description": "Retorno obrigatório de cada turno do agente.",
+    "type": "object",
+    "required": ["acao", "mensagens", "motivo_interno"],
+    "properties": {
+      "acao": {
+        "type": "string",
+        "enum": ["responder", "emoji", "encerrar_silencioso"],
+        "description": "responder=envia mensagens; emoji=envia emoji único; encerrar_silencioso=nota privada + etiqueta, sem mensagem"
+      },
+      "mensagens": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Blocos de texto a enviar em sequência. Cada bloco ≤300 caracteres. Para acao=emoji, array com um único emoji. Para acao=encerrar_silencioso, array vazio."
+      },
+      "motivo_interno": {
+        "type": "string",
+        "description": "Rastreabilidade interna. Nunca exibido ao lead."
+      }
+    }
+  }
+}
