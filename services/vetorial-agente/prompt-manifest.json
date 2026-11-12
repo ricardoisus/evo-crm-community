@@ -1,8 +1,8 @@
 {
   "atendimento.md": {
     "source_path": "/Users/ricardohenrique/Projetos/Atividades da Vetorial/Vetorial - Evo CRM Agentes/agentes/ricardo-ia/prompt.md",
-    "sha256": "2920684a0ee99d807f74547250eda237580173ae070205e6d140b4d9c9d6835f",
-    "version": "A6 v1.2",
+    "sha256": "02717474eb6ab58e7b3f603e8c8bb67f1c455df50b6172d6d6413f12ab28f4b9",
+    "version": "A9 v1.3",
     "copied_for": "Pacote de implantação; não é cópia da pasta privada fontes/"
   },
   "acoes.json": {
@@ -13,8 +13,8 @@
   },
   "analista.md": {
     "source_path": "/Users/ricardohenrique/Projetos/Atividades da Vetorial/Vetorial - Evo CRM Agentes/agentes/analista-pipeline/prompt.md",
-    "sha256": "7de37fc293ad8bfbb1ea72fa63448d51eb08fa378ec2bae07a208b049e78aa34",
-    "version": "P3 v1.0",
+    "sha256": "79f92ff8775c1afdf44b057d0db9a60f60c0a1cec7250fc067d3ab4eaa0093bf",
+    "version": "A9 v1.1",
     "copied_for": "Pacote de implantação; não é cópia da pasta privada fontes/"
   },
   "analista.json": {
