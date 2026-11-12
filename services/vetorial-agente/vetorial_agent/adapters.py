@@ -133,11 +133,12 @@ class CRM:
 
 
 class OpenAI:
-    def __init__(self, key, model, project=None):
+    def __init__(self, key, model, project=None, transcription=None):
         project = project or os.environ.get("OPENAI_PROJECT", "")
         if not project.startswith("proj_"):
             raise ValueError("OPENAI_PROJECT obrigatorio")
         self.model = model
+        self.transcription = transcription
         self.http = httpx.Client(
             base_url="https://api.openai.com/v1",
             timeout=60,
@@ -151,7 +152,7 @@ class OpenAI:
             suffix = ""
             try:
                 code = r.json().get("error", {}).get("code")
-                if code in ("insufficient_quota", "rate_limit_exceeded", "billing_hard_limit_reached"):
+                if code in ("insufficient_quota", "rate_limit_exceeded", "billing_hard_limit_reached", "credit_balance"):
                     suffix = "_" + code
             except (ValueError, AttributeError):
                 pass
@@ -287,26 +288,9 @@ class OpenAI:
             "audio/webm",
             "audio/x-wav",
         ):
-            d = self.post(
-                "/audio/transcriptions",
-                data={"model": "gpt-4o-mini-transcribe", "language": "pt"},
-                files={
-                    "file": (
-                        "audio."
-                        + {
-                            "audio/ogg": "ogg",
-                            "audio/mpeg": "mp3",
-                            "audio/mp4": "mp4",
-                            "audio/wav": "wav",
-                            "audio/webm": "webm",
-                            "audio/x-wav": "wav",
-                        }[mime],
-                        raw,
-                        mime,
-                    )
-                },
-            )
-            return d["text"]
+            if self.transcription is None:
+                raise RuntimeError("groq_nao_configurada")
+            return self.transcription.transcribe(mime, raw)
         if mime in ("image/png", "image/jpeg", "image/webp"):
             d = self.post(
                 "/responses",

@@ -22,8 +22,9 @@ from .fixtures import fixture, SLOTS, EMAIL, SLOT, U, A
 
 
 class Recorder:
-    def __init__(self, model, media_fixtures):
+    def __init__(self, model, media_fixtures, progress=None):
         self.model = model
+        self.progress = progress
         self.turns = []
         self.actions = []
         self.error = None
@@ -52,6 +53,9 @@ class Recorder:
                 entry["error_code"] = code
             self.error = type(e).__name__
             raise
+        finally:
+            if self.progress:
+                self.progress(self.turns)
 
     def media(self, mime, data):
         return self.model.media(mime, data)
@@ -68,13 +72,13 @@ def identity_disclosed(messages):
     )
 
 
-def evaluate(model_name, n, media_dir):
+def evaluate(model_name, n, media_dir, raw_model=None, real_typing=False, progress=None):
     f = fixture(n)
     clock = Clock()
     crm = CRMStub()
     calendar = TestCalendar(SLOTS)
-    raw_model = OpenAI(os.environ["OPENAI_API_KEY"], model_name)
-    recorder = Recorder(raw_model, media_dir)
+    raw_model = raw_model or OpenAI(os.environ["OPENAI_API_KEY"], model_name)
+    recorder = Recorder(raw_model, media_dir, progress=progress)
     crm.context["messages"] = copy.deepcopy(f["history"])
     if f["prebook"]:
         calendar.call(
@@ -119,8 +123,26 @@ def evaluate(model_name, n, media_dir):
         store = Store("sqlite:///" + str(Path(tmp) / "state.db"))
         store.migrate()
         policy = Policy("box", frozenset(["+15550000002"]))
+        first_sends = []
+        batch_start = [None]
+        original_command = crm.command
+
+        def observed_command(*a, **kw):
+            result = original_command(*a, **kw)
+            if len(a) > 3 and a[3] == "send" and batch_start[0] is not None:
+                first_sends.append(time.monotonic() - batch_start[0])
+                batch_start[0] = None
+            return result
+
+        crm.command = observed_command
+
+        def measured_sleep(seconds):
+            if real_typing:
+                time.sleep(seconds)
+            clock.sleep(seconds)
+
         worker = Worker(
-            store, crm, recorder, calendar, policy, sleep=clock.sleep, clock=clock
+            store, crm, recorder, calendar, policy, sleep=measured_sleep, clock=clock
         )
         timings = []
         version = 0
@@ -152,6 +174,7 @@ def evaluate(model_name, n, media_dir):
             clock.now += 30 if f["media"] == "audio" else 20
             sent_before = len(crm.sent)
             start = time.monotonic()
+            batch_start[0] = start
             worker.tick()
             timings.append(time.monotonic() - start)
             for text in crm.sent[sent_before:]:
@@ -203,7 +226,7 @@ def evaluate(model_name, n, media_dir):
     return dict(
         scenario=f["id"],
         model=model_name,
-        status="APROVADO_AUTOMATICO" if all(checks.values()) else "FALHA_AUTOMATICA",
+        status="INCONCLUSIVO_EXECUCAO" if recorder.error else "APROVADO_AUTOMATICO" if all(checks.values()) else "FALHA_AUTOMATICA",
         checks=checks,
         missing_tools=missing,
         turns=recorder.turns,
@@ -212,6 +235,8 @@ def evaluate(model_name, n, media_dir):
         calendar_events_stub=list(calendar.events.values()),
         usage=raw_model.usage,
         latency_seconds=timings,
+        first_block_wall_seconds=first_sends,
+        first_block_scope="Fim da rajada elegível até primeiro send no stub; API e digitação reais" if real_typing else "Relógio virtual; não é latência real",
         debounce_seconds=30 if f["media"] == "audio" else 20,
         typing_simulated_seconds="1500 caracteres/min; relógio virtual",
         editorial_review="PENDENTE revisão das transcrições A4; A2 avaliou v1.0",

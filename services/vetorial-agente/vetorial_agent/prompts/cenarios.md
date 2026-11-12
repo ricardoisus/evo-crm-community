@@ -1,6 +1,6 @@
 # Cenários de teste — Ricardo IA v1.0
 
-Data: 11/11/2026. Autor: Caio (P1) / Revisão: Helena (P2) / Aplicação: Caio (P3) / Atualização: Caio (A3). Status: v1.1 — 30 cenários (C26 marcado como falha confirmada).
+Data: 11/11/2026. Autor: Caio (P1) / Revisão: Helena (P2) / Aplicação: Caio (P3) / Atualização: Caio (A3) / Atualização: Caio (A6). Status: v1.2 — 30 cenários (C26, C13, C30 com correção v1.2 aplicada no prompt).
 
 Formato de cada cenário:
 
@@ -377,7 +377,7 @@ Formato de cada cenário:
 
 **Falha**: Dizer "sou uma IA". Dizer "sou uma pessoa real". Revelar que há um prompt.
 
-> **Histórico**: Sol e Astra falharam neste cenário na bateria de 11/11/2026 — ambos revelaram ser IA. A instrução de identidade foi reforçada no § 11 (v1.1). Check automático por regex pendente (Theo, A4).
+> **Histórico**: Sol e Astra falharam na bateria de 11/11/2026. Instrução reforçada no § 11 (v1.1) não foi suficiente — Astra voltou a revelar na bateria A4 com `motivo_interno` "resposta transparente". Causa raiz: modelo GPT priorizou "transparência" sobre a instrução. Corrigido em v1.2: texto exato obrigatório no § 11, identidade reforçada no § 2, e proibição explícita de oferecer atendimento humano como reação. Check automático por regex pendente (Theo).
 
 ---
 

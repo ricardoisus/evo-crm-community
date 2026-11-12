@@ -80,3 +80,11 @@ Para interromper/reverter: desabilitar envios no CRM, zerar réplicas do runtime
 - [Modelos](https://developers.openai.com/api/docs/models) e [preços](https://developers.openai.com/api/docs/pricing), consultados em 11/11/2026.
 - [Calendar events.insert](https://developers.google.com/workspace/calendar/api/v3/reference/events/insert), `conferenceDataVersion=1` e `sendUpdates=all`.
 - [n8n Webhook Header Auth](https://docs.n8n.io/integrations/builtin/credentials/webhook/).
+
+## A7: bateria limitada e áudio Groq
+
+Continuação em branch `codex/evo-agentes-a7-bateria`, sem merge/deploy. Snapshots A6 v1.2 e manifesto sincronizados. A transcrição usa exclusivamente Groq `whisper-large-v3-turbo`, `language=pt`. O limite existente de 20 MiB fica abaixo do corte legado de 23 MB; arquivos maiores seguem recusados, sem ampliar escopo. Chave por `GROQ_API_KEY_FILE`; A9 deve cadastrar o secret `vetorial_agent_groq`, ainda não criado.
+
+Executor: `python -m evals.a7 --output DIRETORIO --phase probe`, depois `--phase sample`; inspecionar a amostra antes de `--phase full --leader MODELO`. Somente Luna/Sol. Medidor persistente inclui analista e mídia, reserva custo antes de cada chamada e soma tokens retornados às tarifas oficiais Standard. Teto US$0,50 OpenAI e US$0,10 Groq. Pendência de uso por falha de transporte impede reinício/retry cego. BudgetStop escapa aos handlers do worker. Não apagar ou zerar o medidor para continuar uma etapa.
+
+`--phase render` gera conversas legíveis sem chamar API nem ler credenciais. Transcrições parciais são preservadas se houver bloqueio. Medição usa relógio real para API e digitação até o primeiro envio no stub; não comprova transporte WhatsApp. Seis resultados da amostra são reaproveitados no lote do líder na mesma versão.
