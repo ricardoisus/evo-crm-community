@@ -23,7 +23,7 @@
         "VETORIAL_AGENT_ANALYSIS_ALL": "false",
         "VETORIAL_AGENT_INTERNAL_NUMBERS": "+554792548551",
         "CALENDAR_GATEWAY_URL": "http://n8n_webhook_n8n_webhook:5678/webhook/vetorial-calendar-private-v1",
-        "CALENDLY_EVENT_TYPE": "https://api.calendly.com/event_types/d604c9e1-b09a-4d71-adec-bf1f1532ba9c"
+        "CALENDLY_EVENT_TYPE": "https://api.calendly.com/event_types/c6ebc6c3-795a-456e-a509-07ac2431fd29"
       },
       "secrets": [
         "vetorial_agent_database_url",
@@ -31,7 +31,10 @@
         "vetorial_agent_openai",
         "vetorial_agent_bridge",
         "vetorial_agent_calendar",
-        "vetorial_agent_calendly"
+        {
+          "source": "vetorial_agent_calendly_ricardo_a14",
+          "target": "vetorial_agent_calendly"
+        }
       ],
       "deploy": {
         "replicas": 1,
@@ -82,7 +85,7 @@
     "vetorial_agent_calendar": {
       "external": true
     },
-    "vetorial_agent_calendly": {
+    "vetorial_agent_calendly_ricardo_a14": {
       "external": true
     }
   }
