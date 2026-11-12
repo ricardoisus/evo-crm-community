@@ -3,6 +3,9 @@
 -- Never combine SET and a password in one psql -c / multi-statement request.
 SET log_statement = 'none';
 SET log_min_duration_statement = -1;
+-- If installed, disable utility-query tracking/auditing in this session too:
+-- SET pg_stat_statements.track = 'none';
+-- SET pgaudit.log = 'none';
 -- Operator binds passwords in memory; never put passwords in this file.
 -- Dedicated DB only. Execute roles/database as DBA, outside a transaction.
 CREATE ROLE vetorial_agent_owner LOGIN; -- ephemeral migration password supplied privately
