@@ -1,6 +1,7 @@
 """Postgres is authoritative. SQLite is used only by offline tests; no real data."""
 
 import time
+import logging
 from sqlalchemy import (
     MetaData,
     Table,
@@ -124,6 +125,10 @@ class Store:
                 "group",
                 "status",
             )
+            if not allowed:
+                logging.getLogger("vetorial_agent.policy").warning(
+                    "vetorial_agent event=ignored reason=outside_allowlist"
+                )
             paused = event["paused"] or event["kind"] == "human" or not allowed
             # A normal incoming event cannot clear an existing human pause.
             if row["paused"] and event["kind"] != "resume":
