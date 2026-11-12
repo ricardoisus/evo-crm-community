@@ -1,0 +1,67 @@
+{
+  "payload": {
+    "schema_version": 1,
+    "deployment_id": "00000000-0000-4000-8000-000000000001",
+    "revision": 1,
+    "policy_epoch": 1,
+    "binding": {
+      "agent_bot_id": "00000000-0000-4000-8000-000000000002",
+      "inbox_ids": [
+        "00000000-0000-4000-8000-000000000003"
+      ],
+      "pipeline_id": null
+    },
+    "activation": {
+      "atendimento": "pilot",
+      "analista": "pilot",
+      "allowlist": [
+        "+15550000002"
+      ],
+      "internal_numbers": [
+        "+15550000001"
+      ]
+    },
+    "roles": {
+      "atendimento": {
+        "model": "gpt-6-luna",
+        "prompt": "Olá, ação 👋\r\nSegunda linha.",
+        "prompt_version": "1.3",
+        "actions": {},
+        "output_schema": {}
+      },
+      "analista": {
+        "model": "gpt-6-luna",
+        "prompt": "Olá, ação 👋\r\nSegunda linha.",
+        "prompt_version": "1.1",
+        "actions": {},
+        "output_schema": {}
+      }
+    },
+    "behavior": {
+      "text_debounce_ms": 20000,
+      "audio_debounce_ms": 30000,
+      "analysis_silence_ms": 300000,
+      "typing_cpm": 1500,
+      "first_typing_cap_ms": 6000,
+      "next_typing_cap_ms": 12000,
+      "recheck_ms": 500,
+      "timezone": "America/Sao_Paulo",
+      "office_hours": {
+        "enabled": false,
+        "windows": []
+      }
+    },
+    "limits": {},
+    "integrations": {
+      "availability_provider": "calendly",
+      "event_type": "https://api.calendly.com/event_types/00000000-0000-4000-8000-000000000004",
+      "calendar_id": "synthetic@example.invalid",
+      "booking_minutes": 45,
+      "google_gateway_ref": "vetorial-calendar-v1"
+    },
+    "provider": {},
+    "runtime": {}
+  },
+  "sha256": "fb79dd681d41df6a39fef7fcdf2e638c91fc80c7dc93654e3008c2783179ce8a",
+  "lease_ms": 120000
+}
