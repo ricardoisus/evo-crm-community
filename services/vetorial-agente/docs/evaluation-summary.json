@@ -1,0 +1,52 @@
+{
+  "gpt-6-astra": {
+    "first_block_estimate_p50": 13.200224124984816,
+    "first_block_estimate_max": 21.87743041703012,
+    "first_block_estimate_over_15": 15,
+    "first_block_scope": "Estimativa: tempo da API/contexto + digitação virtual do primeiro bloco; não mede transporte real.",
+    "scenarios": 30,
+    "passed": 23,
+    "failures": [
+      "C04",
+      "C05",
+      "C06",
+      "C13",
+      "C24",
+      "C29",
+      "C30"
+    ],
+    "latency_p50": 6.227327624976169,
+    "latency_max": 13.917430417030118,
+    "latency_over_15": 0,
+    "estimated_total_usd": 2.5309340000000002,
+    "estimated_per_scenario_usd": 0.08436446666666668,
+    "cost_scope": "Texto/visão medidos; transcrição de áudio excluída do total por não retornar os mesmos campos de uso. Não é preço de produção.",
+    "rates_source": "https://developers.openai.com/api/docs/pricing",
+    "editorial_review": "PENDENTE A2"
+  },
+  "gpt-6.1-sol": {
+    "first_block_estimate_p50": 12.357759957993403,
+    "first_block_estimate_max": 17.84019287502859,
+    "first_block_estimate_over_15": 9,
+    "first_block_scope": "Estimativa: tempo da API/contexto + digitação virtual do primeiro bloco; não mede transporte real.",
+    "scenarios": 30,
+    "passed": 23,
+    "failures": [
+      "C04",
+      "C05",
+      "C06",
+      "C22",
+      "C24",
+      "C29",
+      "C30"
+    ],
+    "latency_p50": 5.766915666463319,
+    "latency_max": 10.360192875028588,
+    "latency_over_15": 0,
+    "estimated_total_usd": 0.4397825000000001,
+    "estimated_per_scenario_usd": 0.01465941666666667,
+    "cost_scope": "Texto/visão medidos; transcrição de áudio excluída do total por não retornar os mesmos campos de uso. Não é preço de produção.",
+    "rates_source": "https://developers.openai.com/api/docs/pricing",
+    "editorial_review": "PENDENTE A2"
+  }
+}
