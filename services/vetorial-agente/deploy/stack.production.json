@@ -26,7 +26,10 @@
         "CALENDLY_EVENT_TYPE": "https://api.calendly.com/event_types/c6ebc6c3-795a-456e-a509-07ac2431fd29"
       },
       "secrets": [
-        "vetorial_agent_database_url",
+        {
+          "source": "vetorial_agent_database_url_a14_v2",
+          "target": "vetorial_agent_database_url"
+        },
         "vetorial_agent_groq",
         "vetorial_agent_openai",
         "vetorial_agent_bridge",
@@ -70,9 +73,6 @@
     }
   },
   "secrets": {
-    "vetorial_agent_database_url": {
-      "external": true
-    },
     "vetorial_agent_groq": {
       "external": true
     },
@@ -86,6 +86,9 @@
       "external": true
     },
     "vetorial_agent_calendly_ricardo_a14": {
+      "external": true
+    },
+    "vetorial_agent_database_url_a14_v2": {
       "external": true
     }
   }

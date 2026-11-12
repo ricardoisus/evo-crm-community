@@ -264,3 +264,11 @@ off, restaurar composes77/78 do backup pelo Portainer (CRM65d5615 digest
 parado e preservar tabelas/outbox/eventos. Desativar só gateway novo se necessário.
 Não restaurar dump sobre dados novos. Entrega canônica:
 `Vetorial - Evo CRM Agentes/entregas/A14-implantacao.md`, com runbook no mesmo projeto.
+
+A14 — correção de credencial: a inspeção final confirmou que log_statement=ddl
+registrou a senha inicial da role vetorial_agent_app em log privado. Rotacionar a
+senha após SETs de logging em mensagens independentes na mesma sessão, sem mudar
+a configuração global. Usar secret vetorial_agent_database_url_a14_v2, target
+vetorial_agent_database_url. A senha antiga fica inválida; role DDL já não tem LOGIN
+nem senha. Preservar auditoria; não apagar logs do servidor. Conferir saúde após
+rollout e registrar verificação sem expor valores. Imagens e modelo não mudam.
