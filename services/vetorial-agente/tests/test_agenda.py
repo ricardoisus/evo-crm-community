@@ -179,7 +179,7 @@ def test_cross_conversation_conflict_and_restart(rig):
     assert g.mutated == 1
 
 
-ET = "https://api.calendly.com/event_types/d604c9e1-b09a-4d71-adec-bf1f1532ba9c"
+ET = "https://api.calendly.com/event_types/c6ebc6c3-795a-456e-a509-07ac2431fd29"
 NOW = datetime(2026, 11, 11, 12, tzinfo=timezone.utc)
 
 
@@ -276,7 +276,7 @@ def test_calendly_errors_fail_closed(tmp_path, status):
 
 @pytest.mark.parametrize(
     "token,event_type",
-    [("", ET), ("x" * 40, ""), ("x" * 40, "https://evil.example/event_types/d604c9e1-b09a-4d71-adec-bf1f1532ba9c")],
+    [("", ET), ("x" * 40, ""), ("x" * 40, "https://evil.example/event_types/c6ebc6c3-795a-456e-a509-07ac2431fd29")],
 )
 def test_calendly_misconfiguration_fails_closed_without_request(token, event_type):
     stub = CalendlyStub([SLOT])

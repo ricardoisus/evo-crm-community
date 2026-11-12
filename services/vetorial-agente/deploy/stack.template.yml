@@ -19,7 +19,7 @@ services:
       VETORIAL_AGENT_ANALYSIS_ALL: 'false'
       VETORIAL_AGENT_INTERNAL_NUMBERS: ''
       CALENDAR_GATEWAY_URL: ''
-      CALENDLY_EVENT_TYPE: https://api.calendly.com/event_types/d604c9e1-b09a-4d71-adec-bf1f1532ba9c
+      CALENDLY_EVENT_TYPE: https://api.calendly.com/event_types/c6ebc6c3-795a-456e-a509-07ac2431fd29
     secrets: [vetorial_agent_groq, vetorial_agent_database_url, vetorial_agent_openai, vetorial_agent_bridge, vetorial_agent_calendar, vetorial_agent_calendly]
     deploy:
       replicas: 1
