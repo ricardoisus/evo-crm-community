@@ -249,3 +249,24 @@ preservar tabelas/outboxes/eventos e manter runtime em zero réplicas. Desativar
 o gateway novo, sem alterar credencial Google ou workflows existentes.
 Não restaurar dump sobre dados novos. Resultado operacional e prova de eventos reais
 na entrega canônica `Vetorial - Evo CRM Agentes/entregas/A14-implantacao.md`.
+
+A14 concluída em 12/11: stack102 criada pelo Portainer; ponte, CRM e Sidekiq ativos
+somente para o telefone pessoal autorizado, ambos os controles amplos false. Migração
+CRM20261112030000 aplicada; sete tabelas no banco dedicado, aplicação sem DDL/DELETE,
+role DDL sem LOGIN. Stacks temporárias100/101 e secret efêmero DDL removidos.
+Runtime/CRM/frontend e readiness públicos200; entrada runtime sem HMAC401.
+Gateway n8n `0A8x1SP5IXvHctuq` ativo: free/busy200 com calendário correto, list200,
+get de ID inexistente404, sem chave403. Zero evento criado.
+
+Correção de transporte n8n2.10.3: comparação isolada comprovou que `sendBody`
+dinâmico perde o corpo (Google400 Missing timeMin); o mesmo caso com true literal
+retorna200. Gateway usa IF e dois nós HTTP com switches literais; teste Node em
+`deploy/calendar-gateway.test.mjs`. Artefato final incorporado pelo PR18 (1576de9),
+sem mudança no código da imagem runtime b848276. PRs16/17 registram a investigação;
+o diagnóstico temporário foi removido do artefato final.
+
+Sem novos eventos naturais na janela A14: logs de contato fora da lista e resposta
+real do agente ainda não foram observados. Eventos pré-runtime permanecem13 incoming
+com ID do provedor. Gate/configuração e testes comprovam restrição; não equivalem
+à validação do primeiro atendimento. Calendly continua indisponível por conexão
+externa; Ricardo reconecta Google no Calendly e inicia o teste pelo celular.
