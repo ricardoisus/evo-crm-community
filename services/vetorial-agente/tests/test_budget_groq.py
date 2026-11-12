@@ -122,3 +122,44 @@ def test_cache_write_uses_requested_or_default_official_rate(tmp_path,ttl,expect
         'input_tokens_details':{'cache_write_tokens':1000,'cached_tokens':0}}}, '/responses',
         json={'model':'gpt-6.1-sol','max_output_tokens':16,'prompt_cache_options':{'ttl':ttl}})
     assert meter.data['openai_usd']==pytest.approx(expected)
+
+
+def test_analyst_can_use_luna_while_conversation_uses_sol():
+    ai=OpenAI('synthetic','gpt-6.1-sol',project='proj_synthetic',analyst_model='gpt-6-luna')
+    payloads=[]
+    def post(path,**kwargs):
+        payloads.append(kwargs['json'])
+        raise RuntimeError('synthetic_stop')
+    ai.post=post
+    with pytest.raises(RuntimeError,match='synthetic_stop'):
+        ai.run({'messages':[]},lambda n,a:{},analyst=True)
+    assert payloads[0]['model']=='gpt-6-luna'
+    assert payloads[0]['tools']==[]
+    with pytest.raises(RuntimeError,match='synthetic_stop'):
+        ai.run({'messages':[]},lambda n,a:{})
+    assert payloads[1]['model']=='gpt-6.1-sol'
+    assert payloads[1]['tools']
+
+
+def test_responses_forces_standard_tier_for_declared_budget():
+    seen=[]
+    def response(request):
+        import json
+        seen.append(json.loads(request.content))
+        return httpx.Response(200,json={'usage':{'input_tokens':1,'output_tokens':1},'service_tier':'default'})
+    ai=OpenAI('synthetic','gpt-6-luna',project='proj_synthetic')
+    ai.http=httpx.Client(base_url='https://api.openai.com/v1',transport=httpx.MockTransport(response))
+    ai.post('/responses',json={'model':'gpt-6-luna'})
+    assert seen[0]['service_tier']=='default'
+    assert ai.usage[0]['_service_tier']=='default'
+
+
+def test_readable_conversations_are_generated_without_credentials_or_api(tmp_path,monkeypatch):
+    import json
+    from evals.a7 import main
+    (tmp_path/'gpt-6-luna-01.json').write_text(json.dumps({
+        'model':'gpt-6-luna','scenario':'C01','status':'INCONCLUSIVO_EXECUCAO','checks':{},'turns':[]}))
+    monkeypatch.setattr('evals.a7.credentials',lambda:pytest.fail('leitura indevida de credenciais'))
+    monkeypatch.setattr('sys.argv',['evals.a7','--output',str(tmp_path),'--phase','render'])
+    main()
+    assert 'INCONCLUSIVO_EXECUCAO' in (tmp_path/'conversas.md').read_text()

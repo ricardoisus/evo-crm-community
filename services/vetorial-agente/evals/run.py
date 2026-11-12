@@ -41,6 +41,7 @@ class Recorder:
             self.actions.append(receipt)
             return result
 
+        usage_start = len(getattr(self.model, "usage", []))
         try:
             output = self.model.run(context, action, analyst)
             entry["output"] = output
@@ -54,6 +55,7 @@ class Recorder:
             self.error = type(e).__name__
             raise
         finally:
+            entry["usage"] = copy.deepcopy(getattr(self.model, "usage", [])[usage_start:])
             if self.progress:
                 self.progress(self.turns)
 
@@ -238,7 +240,7 @@ def evaluate(model_name, n, media_dir, raw_model=None, real_typing=False, progre
         first_block_wall_seconds=first_sends,
         first_block_scope="Fim da rajada elegível até primeiro send no stub; API e digitação reais" if real_typing else "Relógio virtual; não é latência real",
         debounce_seconds=30 if f["media"] == "audio" else 20,
-        typing_simulated_seconds="1500 caracteres/min; relógio virtual",
+        typing_simulated_seconds="1500 caracteres/min; relógio real" if real_typing else "1500 caracteres/min; relógio virtual",
         editorial_review="PENDENTE revisão das transcrições A4; A2 avaliou v1.0",
         last_state=local,
     )

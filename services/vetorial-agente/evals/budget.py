@@ -77,5 +77,5 @@ class Meter:
         written = details.get("cache_write_tokens", 0)
         cost = (max(0, u["input_tokens"]-cached-written)*rates[0] + u["output_tokens"]*rates[1]
                 + cached*rates[2] + written*write_rate) / 1e6
-        self.settle("openai", cost, model=model, usage=u)
+        self.settle("openai", cost, model=model, usage=u, service_tier=result.get("service_tier"))
         return result

@@ -36,7 +36,7 @@ def credentials():
     return key, groq
 
 
-def client(model, meter, key, groq_key):
+def client(model, meter, key, groq_key, analyst_model=None):
     groq = GroqTranscription(groq_key)
     original = groq.transcribe
     def transcribe(mime, raw):
@@ -52,7 +52,7 @@ def client(model, meter, key, groq_key):
         meter.settle('groq',cost,model='whisper-large-v3-turbo',seconds=seconds)
         return text
     groq.transcribe = transcribe
-    ai=OpenAI(key,model,project=PROJECT,transcription=groq)
+    ai=OpenAI(key,model,project=PROJECT,transcription=groq,analyst_model=analyst_model)
     post=ai.post
     ai.post=lambda path,**kwargs: meter.openai(post,path,**kwargs)
     return ai
@@ -94,7 +94,7 @@ def write(path,data):
 
 
 def conversations(output):
-    lines=['# A7 — Conversas sintéticas v1.2', '', 'Gerado localmente dos JSONs, sem API. CRM, WhatsApp e agenda em stub.', '']
+    lines=['# A7 — Conversas sintéticas v1.2', '', '- Data: 12/11/2026. Etapa: A7. Autor: Theo, CTO · Codex Sol.', '- Status: evidências sintéticas; aprovação editorial pendente A8.', '- Fontes: JSONs deste diretório; prompt-manifest.json; ../../agentes/cenarios.md.', '', 'Gerado localmente dos JSONs, sem API. CRM, WhatsApp e agenda em stub.', '']
     for p in sorted(output.glob('gpt-*.json')):
         if not re.search(r'-[0-9]{2}\.json$', p.name): continue
         r=json.loads(p.read_text()); lines += [f"## {r['model']} · {r['scenario']} · {r['status']}", '']
@@ -135,7 +135,7 @@ def summarize(output,meter):
 def main():
     p=argparse.ArgumentParser(); p.add_argument('--output',type=Path,required=True)
     p.add_argument('--phase',choices=['probe','sample','full','render'],required=True)
-    p.add_argument('--leader',choices=MODELS); args=p.parse_args()
+    p.add_argument('--leader',choices=MODELS); p.add_argument('--analyst',choices=MODELS); args=p.parse_args()
     out=args.output;out.mkdir(parents=True,exist_ok=True)
     if args.phase=='render':
         conversations(out);return
@@ -155,13 +155,14 @@ def main():
             for model in models:
                 path=out/f'{model}-{n:02}.json'
                 if path.exists():continue
-                ai=client(model,meter,key,groq)
+                ai=client(model,meter,key,groq,analyst_model=args.analyst)
                 partial=out/f'partial-{model}-{n:02}.json'
                 try:
                     result=evaluate(model,n,Path(__file__).parent/'media',raw_model=ai,real_typing=True,progress=lambda turns:write(partial,turns))
                 except BudgetStop:
                     write(path,{'model':model,'scenario':f'C{n:02}','status':'INCONCLUSIVO_EXECUCAO','checks':{'budget_completed':False},'turns':json.loads(partial.read_text()) if partial.exists() else [], 'note':'Execução interrompida; consumo parcial em meter.json. Não aprovado.'})
                     raise
+                result['analyst_model']=args.analyst or model
                 scenario_checks(result)
                 result['editorial_review']='PENDENTE A8; verificações semânticas na entrega A7'
                 write(path,result)

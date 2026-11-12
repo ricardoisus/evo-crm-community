@@ -61,7 +61,8 @@ def build():
     bridge_secret = secret("VETORIAL_AGENT_SECRET")
     crm = CRM(os.environ["CRM_URL"], bridge_secret)
     model = OpenAI(api_key, os.environ["OPENAI_MODEL"],
-                   transcription=GroqTranscription(secret("GROQ_API_KEY")))
+                   transcription=GroqTranscription(secret("GROQ_API_KEY")),
+                   analyst_model=os.environ.get("OPENAI_ANALYST_MODEL"))
 
     def authorize(owner, key):
         state = crm.request(owner)

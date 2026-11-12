@@ -133,11 +133,12 @@ class CRM:
 
 
 class OpenAI:
-    def __init__(self, key, model, project=None, transcription=None):
+    def __init__(self, key, model, project=None, transcription=None, analyst_model=None):
         project = project or os.environ.get("OPENAI_PROJECT", "")
         if not project.startswith("proj_"):
             raise ValueError("OPENAI_PROJECT obrigatorio")
         self.model = model
+        self.analyst_model = analyst_model or model
         self.transcription = transcription
         self.http = httpx.Client(
             base_url="https://api.openai.com/v1",
@@ -147,6 +148,8 @@ class OpenAI:
         self.usage = []
 
     def post(self, path, **kwargs):
+        if path == "/responses":
+            kwargs["json"].setdefault("service_tier", "default")
         r = self.http.post(path, **kwargs)
         if r.status_code != 200:
             suffix = ""
@@ -159,7 +162,7 @@ class OpenAI:
             raise RuntimeError("openai_status_" + str(r.status_code) + suffix)
         d = r.json()
         if "usage" in d:
-            self.usage.append(dict(d["usage"], _endpoint=path))
+            self.usage.append(dict(d["usage"], _endpoint=path, _model=kwargs.get("json", {}).get("model"), _service_tier=d.get("service_tier")))
         return d
 
     def run(self, context, act, analyst=False):
@@ -215,7 +218,7 @@ class OpenAI:
             d = self.post(
                 "/responses",
                 json={
-                    "model": self.model,
+                    "model": self.analyst_model if analyst else self.model,
                     "store": False,
                     "instructions": prompt,
                     "input": inputs,
