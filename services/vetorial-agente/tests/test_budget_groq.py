@@ -113,3 +113,12 @@ def test_unapproved_model_is_refused_before_spend(tmp_path):
         meter.openai(lambda *a,**kw:calls.append(1),'/responses',json={'model':'gpt-6-astra','max_output_tokens':16})
     assert not calls
     assert meter.data['openai_usd']==0
+
+
+@pytest.mark.parametrize('ttl,expected', [('30m',0.0025),('12h',0.005)])
+def test_cache_write_uses_requested_or_default_official_rate(tmp_path,ttl,expected):
+    meter=Meter(tmp_path/'meter.json')
+    meter.openai(lambda *a,**kw:{'usage':{'input_tokens':1000,'output_tokens':0,
+        'input_tokens_details':{'cache_write_tokens':1000,'cached_tokens':0}}}, '/responses',
+        json={'model':'gpt-6.1-sol','max_output_tokens':16,'prompt_cache_options':{'ttl':ttl}})
+    assert meter.data['openai_usd']==pytest.approx(expected)

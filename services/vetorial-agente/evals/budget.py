@@ -57,7 +57,8 @@ class Meter:
         # UTF-8 bytes upper-bound text tokens, including tools/schema overhead.
         # Inline image is capped by payload bytes too (conservative reservation).
         size = len(json.dumps(payload, ensure_ascii=False).encode()) + 2048
-        maximum = (size * max(rates[0], rates[3], rates[4]) + payload["max_output_tokens"] * rates[1]) / 1e6
+        write_rate = rates[4] if payload.get("prompt_cache_options", {}).get("ttl") == "12h" else rates[3]
+        maximum = (size * max(rates[0], write_rate) + payload["max_output_tokens"] * rates[1]) / 1e6
         self.reserve("openai", maximum)
         try:
             result = client(path, **kwargs)
@@ -75,6 +76,6 @@ class Meter:
         cached = details.get("cached_tokens", 0)
         written = details.get("cache_write_tokens", 0)
         cost = (max(0, u["input_tokens"]-cached-written)*rates[0] + u["output_tokens"]*rates[1]
-                + cached*rates[2] + written*max(rates[3:])) / 1e6
+                + cached*rates[2] + written*write_rate) / 1e6
         self.settle("openai", cost, model=model, usage=u)
         return result
