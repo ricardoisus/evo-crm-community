@@ -175,3 +175,46 @@ images created on 2026-04-25 plus runtime patches applied to minified assets.
 - Evolution/channel/agent/calendar integrations unchanged; next stage is
   `evo-agentes:C2`. Docker Desktop was closed before U7 and is closed again at
   its end; local volumes and other stages' worktrees are preserved.
+
+## Vetorial existing Evolution instance — 2026-11-11 (U8)
+
+The CRM now attaches the existing `vetorial` instance through
+`Evolution::AttachExistingInstance` and the authenticated
+`/webhooks/evolution_attached` callback. Native destructive authorization is
+blocked for this instance. The origin proxy for `chat.agenciavetorial.com`
+continues to target the separate Chatwoot service; no Chatwoot integration moved.
+
+- CRM PRs27–30 are merged. Final source commit:
+  `65d5615862c090a412a284f818b6f8cd5482ac3d`.
+- Stacks77/78 were updated through Portainer, changing only the image:
+  `ghcr.io/ricardoisus/evo-ai-crm-community:vetorial-65d5615@sha256:98fed57fa26d6f3b8fea12646a2429b22522666d1cf00ec41d3917473b6406bd`.
+- Image built outside Actions with the workflow arguments, amd64, provenance
+  mode=max and SBOM. No database migration. Frontend remains the U7 image.
+- Backup: `/root/evo_crm/backups/canal-u8-20261111` on manager01, private
+  permissions, PostgreSQL dump verified with pg_restore, Portainer DB,
+  compose/environment snapshots, service specs and SHA256 manifest.
+- Rollouts completed, CRM/Sidekiq/frontend1/1, internal/public readiness and
+  frontend HTTP200. All old web/worker tasks were gone before attachment.
+- Box: `702de859-a676-4af9-a2a1-806da82785d8`, “Vetorial · WhatsApp”.
+  Attachment active at `2026-11-12T00:26:05Z`. No bot enabled, no sends or reads.
+- Evolution GET comparison: only Vetorial's previously null webhook changed.
+  Chatwoot/Rabbit/Typebot/settings remain equal to K1. Other11 instances match
+  all K1 configuration hashes. Connection remains open. No history imported.
+- Validation:32 RSpec examples, lint on new application files, committed local
+  synthetic observations with no automatic sends. Production awaits a natural
+  first event; configuration is not proof of real delivery.
+
+Rollback: first run the attachment service's detach operation (see the CRM
+`docs/attach-existing-evolution.md`), which verifies ownership, disables only
+this webhook and retains the box/messages/instance. Then restore77/78 via
+Portainer to the original compose/environment from the backup, CRM digest
+`sha256:11304de006796934ee29aa27d8f562103a4db4978197847d9393f9713b6ff49d`.
+Do not restore a dump over new data or delete the instance/box. Confirm1/1 and
+HTTP200. Rollback was prepared, not executed.
+
+A1 must explicitly consume the inert observed-message path; generic Agent Bot
+callbacks are suppressed. Human phone echoes carry
+`content_attributes.evolution_origin=human_device`. Reconcile outgoing CRM IDs
+and concurrent provider echoes in A1's idempotent output implementation.
+Operational evidence: Vetorial activity repository,
+`Vetorial - Evo CRM Agentes/entregas/C2-canal-anexar.md` and its sanitized JSONs.
