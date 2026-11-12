@@ -270,3 +270,14 @@ real do agente ainda não foram observados. Eventos pré-runtime permanecem13 in
 com ID do provedor. Gate/configuração e testes comprovam restrição; não equivalem
 à validação do primeiro atendimento. Calendly continua indisponível por conexão
 externa; Ricardo reconecta Google no Calendly e inicia o teste pelo celular.
+
+A14, correção contemporânea de agenda: a linha nova do Opus em estado.md substitui
+o token/tipo legados. Conta certa ricardohenrique-hfer3, tipo Consultar horários
+c6ebc6c3-795a-456e-a509-07ac2431fd29 (40min, buffers10min); evento Google continua45min.
+Consumir CALENDLY_TOKEN_RICARDO de Private/calendly.env. Rotação sem gravar valores:
+novo secret vetorial_agent_calendly_ricardo_a14, target vetorial_agent_calendly,
+mesmo CALENDLY_TOKEN_FILE. Atualizar apenas stack102 via Portainer; guardar secret
+anterior como referência de reversão, sem afetar outros consumidores.
+O teste externo do Sonnet no estado.md confirmou bloqueio/liberação do Calendly
+por evento45min na agenda Trabalho; A14 não criou eventos e revalida só leitura.
+A conclusão de indisponibilidade anterior aplicava-se à conta legada e foi superada.
