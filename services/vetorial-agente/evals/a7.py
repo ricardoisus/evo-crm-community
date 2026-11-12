@@ -123,7 +123,7 @@ def conversations(output):
             if t.get('error'): lines += ['INCONCLUSIVO: '+t.get('error_code',t['error']), '']
             if t.get('rejected_output'): lines += ['Saída rejeitada (não enviada): `'+json.dumps(t['rejected_output'],ensure_ascii=False)+'`', '']
         lines += ['Checks: `'+json.dumps(r.get('checks',{}),ensure_ascii=False)+'`', '']
-    (output/'conversas.md').write_text('\n'.join(lines)+'\n')
+    (output/'conversas.md').write_text('\n'.join(line.rstrip() for line in lines).rstrip()+'\n')
 
 
 def summarize(output,meter):
