@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from vetorial_agent.store import Store
 from vetorial_agent.policy import Policy
-from vetorial_agent.runtime import Worker
+from vetorial_agent.runtime import Worker, FIRST_BLOCK_TYPING_CAP_SECONDS
 from vetorial_agent.adapters import OpenAI
 from vetorial_agent.calendar import TestCalendar
 from tests.fakes import Clock, CRMStub
@@ -52,6 +52,10 @@ class Recorder:
             code = str(e)
             if re.fullmatch(r"openai_status_[0-9]{3}(?:_(?:insufficient_quota|rate_limit_exceeded|billing_hard_limit_reached))?|resposta_incompleta|limite_de_ferramentas", code):
                 entry["error_code"] = code
+            if code in {"blocos_invalidos", "conteudo_publico_proibido", "silencio_com_mensagem", "resposta_vazia", "emoji_invalido"}:
+                entry["error_code"] = code
+                if hasattr(e, "rejected_output"):
+                    entry["rejected_output"] = copy.deepcopy(e.rejected_output)
             self.error = type(e).__name__
             raise
         finally:
@@ -238,6 +242,7 @@ def evaluate(model_name, n, media_dir, raw_model=None, real_typing=False, progre
         usage=raw_model.usage,
         latency_seconds=timings,
         first_block_wall_seconds=first_sends,
+        first_block_typing_cap_seconds=FIRST_BLOCK_TYPING_CAP_SECONDS,
         first_block_scope="Fim da rajada elegível até primeiro send no stub; API e digitação reais" if real_typing else "Relógio virtual; não é latência real",
         debounce_seconds=30 if f["media"] == "audio" else 20,
         typing_simulated_seconds="1500 caracteres/min; relógio real" if real_typing else "1500 caracteres/min; relógio virtual",

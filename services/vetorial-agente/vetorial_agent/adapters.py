@@ -62,6 +62,12 @@ def validate_action(name, args):
     return args
 
 
+class OutputValidationError(ValueError):
+    def __init__(self, code, output):
+        super().__init__(code)
+        self.rejected_output = copy.deepcopy(output)
+
+
 def validate_output(output):
     Draft7Validator(CONTRACT["output_schema"]).validate(output)
     blocks = output["mensagens"]
@@ -204,7 +210,9 @@ class OpenAI:
             schema = json.loads((PROMPTS / "analista.json").read_text())
             tools = []
         else:
-            schema = CONTRACT["output_schema"]
+            schema = copy.deepcopy(CONTRACT["output_schema"])
+            schema["properties"]["mensagens"]["maxItems"] = 5
+            schema["properties"]["mensagens"]["items"]["maxLength"] = 300
             tools = [
                 {
                     "type": "function",
@@ -251,7 +259,10 @@ class OpenAI:
                 if analyst:
                     Draft7Validator(strict(schema)).validate(output)
                     return output
-                return validate_output(output)
+                try:
+                    return validate_output(output)
+                except ValueError as exc:
+                    raise OutputValidationError(str(exc), output) from None
             inputs.extend(d["output"])
             for call in calls:
                 name = call["name"]

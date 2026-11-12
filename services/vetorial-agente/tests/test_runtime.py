@@ -387,3 +387,13 @@ def test_analyst_all_reads_media_through_private_capability(rig):
     assert [cmd["kind"] for cmd in w.crm.commands] == ["analysis_media", "analysis"]
     assert "cardiologista" in w.model.contexts[0]["messages"][0]["media_text"][0]
     assert not w.crm.sent
+
+
+def test_first_typing_block_caps_at_six_seconds_next_at_twelve(rig):
+    w,c=rig
+    w.model.output={'acao':'responder','mensagens':['a'*300,'b'*300],'motivo_interno':'teste'}
+    seed(w,c);c.now+=20
+    start=c();sent=[]
+    w.crm.hook=lambda kind:sent.append(c()-start) if kind=='send' else None
+    assert w.tick()
+    assert sent==[6,18]

@@ -9,6 +9,9 @@ import re
 from .adapters import validate_action, validate_output
 
 
+FIRST_BLOCK_TYPING_CAP_SECONDS = 6
+
+
 class Stale(Exception):
     pass
 
@@ -185,7 +188,7 @@ class Worker:
                     raise Stale()
                 self.command(row, f"typing:{index}", "typing")
                 # Deterministic 1500 chars/min, bounded; interrupts checked every 0.5 sec.
-                remaining = min(12, max(0.5, len(block) * 60 / 1500))
+                remaining = min(FIRST_BLOCK_TYPING_CAP_SECONDS if index == 0 else 12, max(0.5, len(block) * 60 / 1500))
                 while remaining > 0:
                     self.sleep(min(0.5, remaining))
                     remaining -= 0.5

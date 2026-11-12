@@ -79,3 +79,18 @@ class Meter:
                 + cached*rates[2] + written*write_rate) / 1e6
         self.settle("openai", cost, model=model, usage=u, service_tier=result.get("service_tier"))
         return result
+
+
+def resume_execution_after_fix(path, fix_commit):
+    """Only a known technical rejection with fully accounted usage can resume."""
+    import re
+    if not re.fullmatch(r'[0-9a-f]{7,40}',fix_commit):
+        raise BudgetStop('Referência de correção inválida')
+    path=Path(path);data=json.loads(path.read_text())
+    reason=data.get('stopped')
+    if data.get('pending') or reason not in {
+        'BLOQUEADO: defeito de execução na amostra', 'BLOQUEADO: defeito de execução na bateria'}:
+        raise BudgetStop('Retomada recusada: somente erro técnico sem uso pendente')
+    data.setdefault('technical_resumptions',[]).append({'previous_reason':reason,'fix_commit':fix_commit})
+    del data['stopped']
+    temporary=path.with_suffix('.tmp');temporary.write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n');temporary.replace(path)

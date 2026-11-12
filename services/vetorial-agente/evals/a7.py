@@ -11,7 +11,7 @@ import re
 import statistics
 import time
 import wave
-from .budget import Meter, BudgetStop
+from .budget import Meter, BudgetStop, resume_execution_after_fix
 from .run import evaluate
 from vetorial_agent.adapters import OpenAI
 from vetorial_agent.transcription import GroqTranscription
@@ -121,6 +121,7 @@ def conversations(output):
                     lines += [f"**Agente:** {m}\n" for m in o.get('mensagens',[])]
                     lines += ['Motivo privado: '+o.get('motivo_interno',''), '']
             if t.get('error'): lines += ['INCONCLUSIVO: '+t.get('error_code',t['error']), '']
+            if t.get('rejected_output'): lines += ['Saída rejeitada (não enviada): `'+json.dumps(t['rejected_output'],ensure_ascii=False)+'`', '']
         lines += ['Checks: `'+json.dumps(r.get('checks',{}),ensure_ascii=False)+'`', '']
     (output/'conversas.md').write_text('\n'.join(lines)+'\n')
 
@@ -142,10 +143,12 @@ def summarize(output,meter):
 def main():
     p=argparse.ArgumentParser(); p.add_argument('--output',type=Path,required=True)
     p.add_argument('--phase',choices=['probe','sample','full','render'],required=True)
-    p.add_argument('--leader',choices=MODELS); p.add_argument('--analyst',choices=MODELS); args=p.parse_args()
+    p.add_argument('--leader',choices=MODELS); p.add_argument('--analyst',choices=MODELS); p.add_argument('--resume-after-fix',metavar='COMMIT'); args=p.parse_args()
     out=args.output;out.mkdir(parents=True,exist_ok=True)
     if args.phase=='render':
         conversations(out);return
+    if args.resume_after_fix:
+        resume_execution_after_fix(out/'meter.json',args.resume_after_fix)
     meter=Meter(out/'meter.json')
     key,groq=credentials()
     try:
@@ -161,7 +164,12 @@ def main():
         for n in SAMPLE if args.phase=='sample' else range(1,31):
             for model in models:
                 path=out/f'{model}-{n:02}.json'
-                if path.exists():continue
+                if path.exists():
+                    previous=json.loads(path.read_text())
+                    if not args.resume_after_fix or previous['status']!='INCONCLUSIVO_EXECUCAO':continue
+                    archive=out/'before-execution-fix'/args.resume_after_fix
+                    archive.mkdir(parents=True,exist_ok=True)
+                    (archive/path.name).write_bytes(path.read_bytes())
                 ai=client(model,meter,key,groq,analyst_model=args.analyst)
                 partial=out/f'partial-{model}-{n:02}.json'
                 try:
@@ -178,7 +186,7 @@ def main():
                 partial.unlink(missing_ok=True)
                 print(model,result['scenario'],result['status'],round(meter.data['openai_usd'],6),flush=True)
                 if any(t.get('error') for t in result['turns']):
-                    meter.stop('BLOQUEADO: defeito de execução na amostra')
+                    meter.stop('BLOQUEADO: defeito de execução na bateria')
     except BudgetStop as exc:
         print(str(exc),flush=True)
     finally:

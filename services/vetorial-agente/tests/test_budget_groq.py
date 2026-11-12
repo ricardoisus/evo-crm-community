@@ -206,3 +206,49 @@ def test_provider_connection_deadlines_are_short_without_cutting_generation():
         assert adapter.http.timeout.read==60
         assert adapter.http.timeout.pool==5
         adapter.http.close()
+
+
+def test_schema_limits_blocks_before_generation():
+    ai=OpenAI('synthetic','gpt-6-luna',project='proj_synthetic')
+    seen=[]
+    def post(path,**kwargs):
+        seen.append(kwargs['json'])
+        raise RuntimeError('synthetic_stop')
+    ai.post=post
+    with pytest.raises(RuntimeError):ai.run({'messages':[]},lambda n,a:{})
+    schema=seen[0]['text']['format']['schema']['properties']['mensagens']
+    assert schema['maxItems']==5
+    assert schema['items']['maxLength']==300
+
+
+def test_resume_technical_failure_preserves_every_cost(tmp_path):
+    import json
+    from evals.budget import resume_execution_after_fix
+    path=tmp_path/'meter.json';m=Meter(path)
+    m.settle('openai',0.12,model='gpt-6-luna',usage={})
+    with pytest.raises(BudgetStop):m.stop('BLOQUEADO: defeito de execução na bateria')
+    resume_execution_after_fix(path,'123abcd')
+    resumed=Meter(path)
+    assert resumed.data['openai_usd']==0.12
+    assert len(resumed.data['calls'])==1
+    assert resumed.data['technical_resumptions'][0]['fix_commit']=='123abcd'
+    for reason in ['BLOQUEADO: teto de gasto','BLOQUEADO: crédito OpenAI','BLOQUEADO: execução OpenAI sem uso confirmado']:
+        data=dict(resumed.data,stopped=reason);path.write_text(json.dumps(data))
+        with pytest.raises(BudgetStop):resume_execution_after_fix(path,'123abcd')
+    data=dict(resumed.data,stopped='BLOQUEADO: defeito de execução na bateria',pending={'provider':'openai'})
+    path.write_text(json.dumps(data))
+    with pytest.raises(BudgetStop):resume_execution_after_fix(path,'123abcd')
+
+
+def test_rejected_output_is_preserved_only_in_synthetic_recorder():
+    from evals.run import Recorder
+    from vetorial_agent.adapters import OutputValidationError
+    ai=OpenAI('synthetic','gpt-6-luna',project='proj_synthetic')
+    bad={'acao':'responder','mensagens':['x'*301],'motivo_interno':'teste'}
+    import json
+    ai.post=lambda *a,**kw:{'status':'completed','output':[{'type':'message','content':[{'text':json.dumps(bad)}]}]}
+    recorder=Recorder(ai,{})
+    with pytest.raises(OutputValidationError):recorder.run({'messages':[]},lambda n,a:{})
+    assert recorder.turns[0]['error_code']=='blocos_invalidos'
+    assert recorder.turns[0]['rejected_output']==bad
+    assert 'output' not in recorder.turns[0]
