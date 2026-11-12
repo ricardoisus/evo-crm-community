@@ -335,3 +335,55 @@ def test_analyst_failure_has_durable_budget(rig):
         c.now += 16
     assert w.model.calls == 3
     assert not w.crm.sent
+
+
+def test_analyst_all_does_not_expand_public_allowlist(rig):
+    w, c = rig
+    p = Policy("box", frozenset(), analysis_all=True)
+    w.policy = p
+    w.store.ingest(event(), p, c())
+    w.crm.context.update(allowed=False, eligible=False, analysis_allowed=True)
+    c.now += 301
+    assert not w.tick()
+    w.analyse()
+    assert not w.crm.sent
+    assert w.crm.commands[-1]["kind"] == "analysis"
+    assert not p.allows(PHONE)
+    assert p.allows_analysis(PHONE)
+
+
+def test_analyst_closed_and_internal_exclusion(rig):
+    w, c = rig
+    for p in [Policy("box"), Policy("box", internal=frozenset([PHONE]), analysis_all=True)]:
+        w.policy = p
+        w.store.ingest(event(), p, c())
+        w.crm.context.update(analysis_allowed=True)
+        c.now += 301
+        w.analyse()
+        assert w.model.calls == 0
+        assert not w.crm.sent
+
+
+@pytest.mark.parametrize("kind", ["group", "status"])
+def test_broadcast_cannot_enter_analysis(rig, kind):
+    w, c = rig
+    assert not w.store.ingest(event(kind=kind), POLICY, c())
+    c.now += 301
+    w.analyse()
+    assert w.model.calls == 0
+
+
+def test_analyst_all_reads_media_through_private_capability(rig):
+    w, c = rig
+    p = Policy("box", analysis_all=True)
+    w.policy = p
+    w.store.ingest(event(), p, c())
+    w.crm.context.update(allowed=False, eligible=False, analysis_allowed=True, paused=True)
+    w.crm.context["messages"] = [
+        {"role": "user", "content": "", "attachments": [{"id": "a", "bytes": 30}]}
+    ]
+    c.now += 301
+    w.analyse()
+    assert [cmd["kind"] for cmd in w.crm.commands] == ["analysis_media", "analysis"]
+    assert "cardiologista" in w.model.contexts[0]["messages"][0]["media_text"][0]
+    assert not w.crm.sent

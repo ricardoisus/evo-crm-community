@@ -48,6 +48,10 @@ def build():
             )
         ),
     )
+    policy = Policy(
+        policy.inbox_id, policy.allowlist, policy.internal,
+        analysis_all=os.environ.get("VETORIAL_AGENT_ANALYSIS_ALL") == "true",
+    )
     database = secret("DATABASE_URL")
     api_key = secret("OPENAI_API_KEY")
     if not database.startswith("postgresql") or len(api_key) < 32:

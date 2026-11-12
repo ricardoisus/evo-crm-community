@@ -34,9 +34,11 @@ class Worker:
         row = self.store.get(ident)
         if row is None or row["version"] != version or (row["paused"] and not analysis):
             raise Stale()
+        if analysis and not self.policy.allows_analysis(row["phone"]):
+            raise Stale()
         state = self.crm.request(ident)
         if state["version"] != version or (
-            not state.get("eligible", state["allowed"])
+            not state.get("analysis_allowed", state.get("eligible", state["allowed"]))
             if analysis
             else state["paused"] or not state["allowed"]
         ):
@@ -60,7 +62,7 @@ class Worker:
         self.guard(row["id"], row["version"], analysis=analysis)
         context = self.crm.history(row["id"])
         if context["version"] != row["version"] or (
-            not context.get("eligible", context["allowed"])
+            not context.get("analysis_allowed", context.get("eligible", context["allowed"]))
             if analysis
             else context["paused"] or not context["allowed"]
         ):
@@ -81,7 +83,7 @@ class Worker:
                             row["id"],
                             row["version"],
                             f"{row['id']}:{row['version']}:{key}",
-                            "media",
+                            "analysis_media" if analysis else "media",
                             attachment_id=attachment["id"],
                         )
                         return {"text": self.model.media(d["mime"], d["base64"])}

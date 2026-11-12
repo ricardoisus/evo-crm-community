@@ -38,14 +38,14 @@ class CRMStub:
         if key in self.receipts:
             return self.receipts[key]
         assert version == self.context["version"]
-        assert kind == "analysis" or (
+        assert (kind in ("analysis", "analysis_media") and self.context.get("analysis_allowed", True)) or (
             not self.context["paused"] and self.context["allowed"]
         )
         self.commands.append(dict(key=key, kind=kind, **payload))
         if kind == "send":
             self.sent.append(payload["text"])
             result = {"sucesso": True, "status": "sent", "message_id": key}
-        elif kind == "media":
+        elif kind in ("media", "analysis_media"):
             result = {"mime": "audio/ogg", "base64": "c3ludGhldGlj"}
         else:
             result = {"sucesso": True, "status": "done"}

@@ -1,8 +1,8 @@
 # Vetorial agente
 
-Data: 11/11/2026. Etapa: A12. Autor: Theo, CTO · Codex Sol principal.
-Status: implementado e testado com dados sintéticos; candidato para A2. Sem implantação e sem evento real.
-Fontes: `../../AGENTS.md`; frente `Vetorial - Evo CRM Agentes/00-plano.md`, `entregas/K1-canal-e-arquitetura.md`, `entregas/C2-canal-anexar.md`; prompts P3 v1.0 e convenções comerciais da Vetorial.
+Data: 12/11/2026. Etapa: A4, continuação da A12. Autor: Theo, CTO · Codex Sol principal.
+Status: candidato corrigido em A4; implantação e ativação bloqueadas até a bateria e os requisitos de agenda/identidade estarem aprovados. Sem implantação do runtime.
+Fontes: `../../AGENTS.md`; frente `Vetorial - Evo CRM Agentes/00-plano.md`, `entregas/K1-canal-e-arquitetura.md`, `entregas/C2-canal-anexar.md`; prompts A3 v1.1 (analista P3 v1.0) e convenções comerciais da Vetorial.
 
 Serviço próprio decidido na K1. Recebe a outbox autenticada do CRM e responde com a identidade AgentBot. Nunca usa o roteamento global do bot ou o webhook genérico sem persistência. Requer o PR complementar do CRM.
 
@@ -24,6 +24,16 @@ Decisão A12: usar somente Postgres para claims e locks, inclusive lock da agend
 O endpoint CRM deduplica a criação do Message no mesmo commit. O envio ao WhatsApp passa a `sending` em transação anterior ao POST. Uma queda/timeout nessa janela vira `uncertain`, pausa e exige reconciliação. Nunca se promete exactly-once no transporte externo. O lock de canal, igual ao da U8, permite registrar `source_id` antes de seu eco ser classificado como humano.
 
 Campos existentes de origem desconhecida/humana são preservados. O agente só corrige valor que ele próprio havia escrito e que continua igual ao anterior. `false` não é ausência. Pipeline precisa de ID explícito; sem ele, informações permanecem no estado da conversa/nota, sem criar negócios por dedução.
+
+## Controles A4
+
+- `OPENAI_PROJECT` é obrigatório. O adaptador não escolhe um projeto por conta própria. Configurar o projeto aprovado no template.
+- `VETORIAL_AGENT_ANALYSIS_ALL=true` em CRM e runtime permite somente análise privada de contatos válidos da caixa fixa, excluindo equipe e bloqueados. Padrão `false` conserva a lista restrita.
+- A permissão do analista nunca autoriza `send`, `typing`, ferramentas do atendente ou agenda. `analysis_media` permite apenas ler anexos da própria conversa para análise. Grupos/status não entram na análise.
+- Atendimento mantém allowlist explícita; vazia nega todos, mesmo com analista amplo. Não existe valor curinga `*` nem controle de ativação geral de um clique nesta versão. Esse controle continua pendente antes de liberação geral.
+- Evals: `--workers 4` paraleliza somente conversas sintéticas independentes; default 1. O serviço de produção continua com uma réplica e processamento sequencial.
+- Erros externos registram somente status e códigos de uma lista fixa, sem payload. Resumo sem resposta pública deixa a latência do primeiro bloco vazia, em vez de inventar zero.
+- O check de identidade detecta a regressão C26 da A2. Ferramentas obrigatórias são verificadas no atendimento, sem contar o analista posterior. Aprovação automática não substitui revisão editorial.
 
 ## Agenda e credencial
 

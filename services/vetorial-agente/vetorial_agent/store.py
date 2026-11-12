@@ -91,7 +91,7 @@ class Store:
             ).rowcount
             if not inserted:
                 return False
-            if event["inbox_id"] != policy.inbox_id:
+            if event["inbox_id"] != policy.inbox_id or event["kind"] in ("group", "status"):
                 return False
             ident = event["conversation_id"]
             c.execute(

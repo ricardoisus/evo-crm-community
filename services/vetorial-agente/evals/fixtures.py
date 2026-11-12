@@ -1,4 +1,4 @@
-"""Synthetic expansions of OPDIR/agentes/cenarios.md v1.0 (P3).
+"""Synthetic expansions of OPDIR/agentes/cenarios.md v1.1 (A3); fixtures herdadas da P3.
 18/11/2026 is Wednesday, correcting the source's Tuesday example.
 No real contact, phone, calendar or WhatsApp transport is used.
 """

@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Contrato de ações — Ricardo IA v1.0",
+  "title": "Contrato de ações — Ricardo IA v1.1",
   "description": "Ações que o agente pode chamar. Nomes exatos; o runtime implementa.",
   "definitions": {
     "iso8601_utc": {
@@ -83,7 +83,7 @@
       }
     },
     "remarcar": {
-      "description": "Remarca reunião existente para novo horário. Cancela o convite antigo e cria novo.",
+      "description": "Remarca reunião existente para novo horário. Atualiza a reunião existente in-place (PATCH); não cancela nem recria.",
       "parameters": {
         "type": "object",
         "required": ["email", "novo_horario"],

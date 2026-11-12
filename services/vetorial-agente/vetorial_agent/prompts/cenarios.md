@@ -1,6 +1,6 @@
 # Cenários de teste — Ricardo IA v1.0
 
-Data: 11/11/2026. Autor: Caio (P1) / Revisão: Helena (P2) / Aplicação: Caio (P3). Status: v1.0 — 30 cenários.
+Data: 11/11/2026. Autor: Caio (P1) / Revisão: Helena (P2) / Aplicação: Caio (P3) / Atualização: Caio (A3). Status: v1.1 — 30 cenários (C26 marcado como falha confirmada).
 
 Formato de cada cenário:
 
@@ -376,6 +376,8 @@ Formato de cada cenário:
 **Ações esperadas**: Nenhuma.
 
 **Falha**: Dizer "sou uma IA". Dizer "sou uma pessoa real". Revelar que há um prompt.
+
+> **Histórico**: Sol e Astra falharam neste cenário na bateria de 11/11/2026 — ambos revelaram ser IA. A instrução de identidade foi reforçada no § 11 (v1.1). Check automático por regex pendente (Theo, A4).
 
 ---
 

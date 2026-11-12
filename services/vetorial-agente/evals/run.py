@@ -3,9 +3,11 @@ External traffic is exclusively OpenAI. CRM, WhatsApp and calendar are local stu
 """
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import copy
 import json
 import os
+import re
 import statistics
 import tempfile
 import time
@@ -45,11 +47,25 @@ class Recorder:
         except Exception as e:
             # Only sanitized API status or validation category. Never provider payloads.
             entry["error"] = type(e).__name__
+            code = str(e)
+            if re.fullmatch(r"openai_status_[0-9]{3}(?:_(?:insufficient_quota|rate_limit_exceeded|billing_hard_limit_reached))?|resposta_incompleta|limite_de_ferramentas", code):
+                entry["error_code"] = code
             self.error = type(e).__name__
             raise
 
     def media(self, mime, data):
         return self.model.media(mime, data)
+
+
+def identity_disclosed(messages):
+    text = " ".join(messages).casefold()
+    return bool(
+        re.search(
+            r"\b(?:sou|somos|como)\b.{0,60}\b(?:ia|i\.a\.|bot|rob[oô]|assistente virtual|intelig[eê]ncia artificial)\b"
+            r"|\bassistente\b.{0,30}\b(?:ia|intelig[eê]ncia artificial)\b",
+            text,
+        )
+    )
 
 
 def evaluate(model_name, n, media_dir):
@@ -147,10 +163,11 @@ def evaluate(model_name, n, media_dir):
         clock.now += 301
         worker.analyse()
         local = store.get("conv")
-    names = [x["name"] for x in recorder.actions]
+    names = [a["name"] for t in recorder.turns if not t["analyst"] for a in t["actions"]]
     missing = [name for name in f["expected_tools"] if name not in names]
     checks = {
         "schema_and_execution": not recorder.error,
+        "identity_not_disclosed": not identity_disclosed(crm.sent),
         "expected_tools": not missing,
         "no_real_transport": True,
         "no_public_price": not any("R$" in x for x in crm.sent)
@@ -197,7 +214,7 @@ def evaluate(model_name, n, media_dir):
         latency_seconds=timings,
         debounce_seconds=30 if f["media"] == "audio" else 20,
         typing_simulated_seconds="1500 caracteres/min; relógio virtual",
-        editorial_review="PENDENTE A2/Helena: linguagem, condução e requisitos semânticos completos",
+        editorial_review="PENDENTE revisão das transcrições A4; A2 avaliou v1.0",
         last_state=local,
     )
 
@@ -207,25 +224,30 @@ def main():
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--media-dir", type=Path, required=True)
     p.add_argument("--replace", action="store_true")
+    p.add_argument("--workers", type=int, default=1, choices=range(1, 5))
     p.add_argument("--models", nargs="+", default=["gpt-6-astra", "gpt-6.1-sol"])
     p.add_argument("--scenarios", nargs="+", type=int, default=list(range(1, 31)))
     args = p.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    all_results = []
-    for model in args.models:
-        for n in args.scenarios:
-            if not args.replace and (args.output / f"{model}-{n:02}.json").exists():
-                continue
-            result = evaluate(model, n, args.media_dir)
+    jobs = [
+        (model, n)
+        for model in args.models
+        for n in args.scenarios
+        if args.replace or not (args.output / f"{model}-{n:02}.json").exists()
+    ]
+    # Independent synthetic conversations only; never parallel production workers.
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = {
+            pool.submit(evaluate, model, n, args.media_dir): (model, n)
+            for model, n in jobs
+        }
+        for future in as_completed(futures):
+            model, n = futures[future]
+            result = future.result()
             path = args.output / f"{model}-{n:02}.json"
             path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
-            all_results.append(result)
             print(
-                model,
-                result["scenario"],
-                result["status"],
-                result["missing_tools"],
-                flush=True,
+                model, result["scenario"], result["status"], result["missing_tools"], flush=True
             )
     # Append-safe summary regenerated from artifacts, allowing targeted reruns.
     summary = {}
@@ -262,23 +284,31 @@ def main():
                         + min(12, max(0.5, len(output["mensagens"][0]) * 60 / 1500))
                     )
         summary[model] = dict(
-            first_block_estimate_p50=statistics.median(first_estimates),
-            first_block_estimate_max=max(first_estimates),
+            first_block_estimate_p50=statistics.median(first_estimates) if first_estimates else None,
+            first_block_estimate_max=max(first_estimates) if first_estimates else None,
             first_block_estimate_over_15=sum(t > 15 for t in first_estimates),
             first_block_scope="Estimativa: tempo da API/contexto + digitação virtual do primeiro bloco; não mede transporte real.",
             scenarios=len(rows),
             passed=sum(r["status"] == "APROVADO_AUTOMATICO" for r in rows),
+            execution_inconclusive=[
+                r["scenario"] for r in rows if any(t.get("error") for t in r["turns"])
+            ],
+            behavioral_failures=[
+                r["scenario"] for r in rows
+                if r["status"] != "APROVADO_AUTOMATICO" and not any(t.get("error") for t in r["turns"])
+            ],
             failures=[
                 r["scenario"] for r in rows if r["status"] != "APROVADO_AUTOMATICO"
             ],
-            latency_p50=statistics.median(times),
-            latency_max=max(times),
+            latency_scope="Tempo de cada tick, incluindo tentativas rejeitadas; não é SLA de resposta bem-sucedida.",
+            latency_p50=statistics.median(times) if times else None,
+            latency_max=max(times) if times else None,
             latency_over_15=sum(t > 15 for t in times),
             estimated_total_usd=cost,
-            estimated_per_scenario_usd=cost / len(rows),
+            estimated_per_scenario_usd=cost / len(rows) if rows else None,
             cost_scope="Texto/visão medidos; transcrição de áudio excluída do total por não retornar os mesmos campos de uso. Não é preço de produção.",
             rates_source="https://developers.openai.com/api/docs/pricing",
-            editorial_review="PENDENTE A2",
+            editorial_review="PENDENTE revisão das transcrições A4; A2 avaliou v1.0",
         )
     (args.output / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n"

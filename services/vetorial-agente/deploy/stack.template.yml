@@ -9,9 +9,11 @@ services:
       VETORIAL_AGENT_SECRET_FILE: /run/secrets/vetorial_agent_bridge
       CALENDAR_GATEWAY_SECRET_FILE: /run/secrets/vetorial_agent_calendar
       CRM_URL: http://evo-crm:3000
+      OPENAI_PROJECT: proj_zV3BAJYkfAHytv0hezQlY9DA
       OPENAI_MODEL: gpt-6.1-sol
       VETORIAL_AGENT_INBOX_ID: ''
       VETORIAL_AGENT_ALLOWLIST: ''
+      VETORIAL_AGENT_ANALYSIS_ALL: 'false'
       VETORIAL_AGENT_INTERNAL_NUMBERS: ''
       CALENDAR_GATEWAY_URL: ''
       CALENDAR_WORKING_WINDOWS: '[]'

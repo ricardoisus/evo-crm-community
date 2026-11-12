@@ -1,6 +1,7 @@
 import base64
 import copy
 import io
+import os
 import json
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -132,7 +133,10 @@ class CRM:
 
 
 class OpenAI:
-    def __init__(self, key, model, project="proj_zV3BAJYkfAHytv0hezQlY9DA"):
+    def __init__(self, key, model, project=None):
+        project = project or os.environ.get("OPENAI_PROJECT", "")
+        if not project.startswith("proj_"):
+            raise ValueError("OPENAI_PROJECT obrigatorio")
         self.model = model
         self.http = httpx.Client(
             base_url="https://api.openai.com/v1",
@@ -144,7 +148,14 @@ class OpenAI:
     def post(self, path, **kwargs):
         r = self.http.post(path, **kwargs)
         if r.status_code != 200:
-            raise RuntimeError("openai_status_" + str(r.status_code))
+            suffix = ""
+            try:
+                code = r.json().get("error", {}).get("code")
+                if code in ("insufficient_quota", "rate_limit_exceeded", "billing_hard_limit_reached"):
+                    suffix = "_" + code
+            except (ValueError, AttributeError):
+                pass
+            raise RuntimeError("openai_status_" + str(r.status_code) + suffix)
         d = r.json()
         if "usage" in d:
             self.usage.append(dict(d["usage"], _endpoint=path))
