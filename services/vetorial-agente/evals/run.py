@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from vetorial_agent.store import Store
 from vetorial_agent.policy import Policy
-from vetorial_agent.runtime import Worker
+from vetorial_agent.runtime import Worker, FIRST_BLOCK_TYPING_CAP_SECONDS
 from vetorial_agent.adapters import OpenAI
 from vetorial_agent.calendar import TestCalendar
 from tests.fakes import Clock, CRMStub
@@ -22,8 +22,9 @@ from .fixtures import fixture, SLOTS, EMAIL, SLOT, U, A
 
 
 class Recorder:
-    def __init__(self, model, media_fixtures):
+    def __init__(self, model, media_fixtures, progress=None):
         self.model = model
+        self.progress = progress
         self.turns = []
         self.actions = []
         self.error = None
@@ -40,6 +41,7 @@ class Recorder:
             self.actions.append(receipt)
             return result
 
+        usage_start = len(getattr(self.model, "usage", []))
         try:
             output = self.model.run(context, action, analyst)
             entry["output"] = output
@@ -50,8 +52,16 @@ class Recorder:
             code = str(e)
             if re.fullmatch(r"openai_status_[0-9]{3}(?:_(?:insufficient_quota|rate_limit_exceeded|billing_hard_limit_reached))?|resposta_incompleta|limite_de_ferramentas", code):
                 entry["error_code"] = code
+            if code in {"blocos_invalidos", "conteudo_publico_proibido", "silencio_com_mensagem", "resposta_vazia", "emoji_invalido"}:
+                entry["error_code"] = code
+                if hasattr(e, "rejected_output"):
+                    entry["rejected_output"] = copy.deepcopy(e.rejected_output)
             self.error = type(e).__name__
             raise
+        finally:
+            entry["usage"] = copy.deepcopy(getattr(self.model, "usage", [])[usage_start:])
+            if self.progress:
+                self.progress(self.turns)
 
     def media(self, mime, data):
         return self.model.media(mime, data)
@@ -68,13 +78,13 @@ def identity_disclosed(messages):
     )
 
 
-def evaluate(model_name, n, media_dir):
+def evaluate(model_name, n, media_dir, raw_model=None, real_typing=False, progress=None):
     f = fixture(n)
     clock = Clock()
     crm = CRMStub()
     calendar = TestCalendar(SLOTS)
-    raw_model = OpenAI(os.environ["OPENAI_API_KEY"], model_name)
-    recorder = Recorder(raw_model, media_dir)
+    raw_model = raw_model or OpenAI(os.environ["OPENAI_API_KEY"], model_name)
+    recorder = Recorder(raw_model, media_dir, progress=progress)
     crm.context["messages"] = copy.deepcopy(f["history"])
     if f["prebook"]:
         calendar.call(
@@ -119,8 +129,26 @@ def evaluate(model_name, n, media_dir):
         store = Store("sqlite:///" + str(Path(tmp) / "state.db"))
         store.migrate()
         policy = Policy("box", frozenset(["+15550000002"]))
+        first_sends = []
+        batch_start = [None]
+        original_command = crm.command
+
+        def observed_command(*a, **kw):
+            result = original_command(*a, **kw)
+            if len(a) > 3 and a[3] == "send" and batch_start[0] is not None:
+                first_sends.append(time.monotonic() - batch_start[0])
+                batch_start[0] = None
+            return result
+
+        crm.command = observed_command
+
+        def measured_sleep(seconds):
+            if real_typing:
+                time.sleep(seconds)
+            clock.sleep(seconds)
+
         worker = Worker(
-            store, crm, recorder, calendar, policy, sleep=clock.sleep, clock=clock
+            store, crm, recorder, calendar, policy, sleep=measured_sleep, clock=clock
         )
         timings = []
         version = 0
@@ -152,6 +180,7 @@ def evaluate(model_name, n, media_dir):
             clock.now += 30 if f["media"] == "audio" else 20
             sent_before = len(crm.sent)
             start = time.monotonic()
+            batch_start[0] = start
             worker.tick()
             timings.append(time.monotonic() - start)
             for text in crm.sent[sent_before:]:
@@ -203,7 +232,7 @@ def evaluate(model_name, n, media_dir):
     return dict(
         scenario=f["id"],
         model=model_name,
-        status="APROVADO_AUTOMATICO" if all(checks.values()) else "FALHA_AUTOMATICA",
+        status="INCONCLUSIVO_EXECUCAO" if recorder.error else "APROVADO_AUTOMATICO" if all(checks.values()) else "FALHA_AUTOMATICA",
         checks=checks,
         missing_tools=missing,
         turns=recorder.turns,
@@ -212,8 +241,11 @@ def evaluate(model_name, n, media_dir):
         calendar_events_stub=list(calendar.events.values()),
         usage=raw_model.usage,
         latency_seconds=timings,
+        first_block_wall_seconds=first_sends,
+        first_block_typing_cap_seconds=FIRST_BLOCK_TYPING_CAP_SECONDS,
+        first_block_scope="Fim da rajada elegível até primeiro send no stub; API e digitação reais" if real_typing else "Relógio virtual; não é latência real",
         debounce_seconds=30 if f["media"] == "audio" else 20,
-        typing_simulated_seconds="1500 caracteres/min; relógio virtual",
+        typing_simulated_seconds="1500 caracteres/min; relógio real" if real_typing else "1500 caracteres/min; relógio virtual",
         editorial_review="PENDENTE revisão das transcrições A4; A2 avaliou v1.0",
         last_state=local,
     )
@@ -225,7 +257,7 @@ def main():
     p.add_argument("--media-dir", type=Path, required=True)
     p.add_argument("--replace", action="store_true")
     p.add_argument("--workers", type=int, default=1, choices=range(1, 5))
-    p.add_argument("--models", nargs="+", default=["gpt-6-astra", "gpt-6.1-sol"])
+    p.add_argument("--models", nargs="+", default=["gpt-6-luna", "gpt-6.1-sol"])
     p.add_argument("--scenarios", nargs="+", type=int, default=list(range(1, 31)))
     args = p.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -235,7 +267,9 @@ def main():
         for n in args.scenarios
         if args.replace or not (args.output / f"{model}-{n:02}.json").exists()
     ]
-    # Independent synthetic conversations only; never parallel production workers.
+    if jobs:
+        raise RuntimeError("Executor antigo sem medidor desabilitado; use python -m evals.a7 com teto persistente")
+    # Read-only regeneration of historical summaries; paid work uses evals.a7.
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = {
             pool.submit(evaluate, model, n, args.media_dir): (model, n)
@@ -259,7 +293,7 @@ def main():
         times = [t for r in rows for t in r["latency_seconds"]]
         usages = [u for r in rows for u in r["usage"]]
         cost = 0
-        rates = {"gpt-6-astra": (10, 50, 1, 12.5), "gpt-6.1-sol": (2, 10, 0.1, 2.5)}[
+        rates = {"gpt-6-luna": (0.1, 0.5, 0.01, 0.125), "gpt-6-astra": (10, 50, 1, 12.5), "gpt-6.1-sol": (2, 10, 0.1, 2.5)}[
             model
         ]
         for u in usages:

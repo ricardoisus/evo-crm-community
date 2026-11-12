@@ -5,19 +5,21 @@ services:
     networks: [evo_net]
     environment:
       DATABASE_URL_FILE: /run/secrets/vetorial_agent_database_url
+      GROQ_API_KEY_FILE: /run/secrets/vetorial_agent_groq
       OPENAI_API_KEY_FILE: /run/secrets/vetorial_agent_openai
       VETORIAL_AGENT_SECRET_FILE: /run/secrets/vetorial_agent_bridge
       CALENDAR_GATEWAY_SECRET_FILE: /run/secrets/vetorial_agent_calendar
       CRM_URL: http://evo-crm:3000
       OPENAI_PROJECT: proj_zV3BAJYkfAHytv0hezQlY9DA
-      OPENAI_MODEL: gpt-6.1-sol
+      OPENAI_MODEL: gpt-6-luna
+      OPENAI_ANALYST_MODEL: gpt-6-luna
       VETORIAL_AGENT_INBOX_ID: ''
       VETORIAL_AGENT_ALLOWLIST: ''
       VETORIAL_AGENT_ANALYSIS_ALL: 'false'
       VETORIAL_AGENT_INTERNAL_NUMBERS: ''
       CALENDAR_GATEWAY_URL: ''
       CALENDAR_WORKING_WINDOWS: '[]'
-    secrets: [vetorial_agent_database_url, vetorial_agent_openai, vetorial_agent_bridge, vetorial_agent_calendar]
+    secrets: [vetorial_agent_groq, vetorial_agent_database_url, vetorial_agent_openai, vetorial_agent_bridge, vetorial_agent_calendar]
     deploy:
       replicas: 1
       resources:
@@ -31,6 +33,7 @@ services:
 networks:
   evo_net: {external: true}
 secrets:
+  vetorial_agent_groq: {external: true}
   vetorial_agent_database_url: {external: true}
   vetorial_agent_openai: {external: true}
   vetorial_agent_bridge: {external: true}

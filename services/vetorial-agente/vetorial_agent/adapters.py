@@ -62,6 +62,12 @@ def validate_action(name, args):
     return args
 
 
+class OutputValidationError(ValueError):
+    def __init__(self, code, output):
+        super().__init__(code)
+        self.rejected_output = copy.deepcopy(output)
+
+
 def validate_output(output):
     Draft7Validator(CONTRACT["output_schema"]).validate(output)
     blocks = output["mensagens"]
@@ -133,32 +139,37 @@ class CRM:
 
 
 class OpenAI:
-    def __init__(self, key, model, project=None):
+    def __init__(self, key, model, project=None, transcription=None, analyst_model=None):
         project = project or os.environ.get("OPENAI_PROJECT", "")
         if not project.startswith("proj_"):
             raise ValueError("OPENAI_PROJECT obrigatorio")
         self.model = model
+        self.analyst_model = analyst_model or model
+        self.transcription = transcription
         self.http = httpx.Client(
             base_url="https://api.openai.com/v1",
-            timeout=60,
+            timeout=httpx.Timeout(60, connect=1, pool=5),
+            limits=httpx.Limits(keepalive_expiry=60),
             headers={"Authorization": "Bearer " + key, "OpenAI-Project": project},
         )
         self.usage = []
 
     def post(self, path, **kwargs):
+        if path == "/responses":
+            kwargs["json"].setdefault("service_tier", "default")
         r = self.http.post(path, **kwargs)
         if r.status_code != 200:
             suffix = ""
             try:
                 code = r.json().get("error", {}).get("code")
-                if code in ("insufficient_quota", "rate_limit_exceeded", "billing_hard_limit_reached"):
+                if code in ("insufficient_quota", "rate_limit_exceeded", "billing_hard_limit_reached", "credit_balance"):
                     suffix = "_" + code
             except (ValueError, AttributeError):
                 pass
             raise RuntimeError("openai_status_" + str(r.status_code) + suffix)
         d = r.json()
         if "usage" in d:
-            self.usage.append(dict(d["usage"], _endpoint=path))
+            self.usage.append(dict(d["usage"], _endpoint=path, _model=kwargs.get("json", {}).get("model"), _service_tier=d.get("service_tier")))
         return d
 
     def run(self, context, act, analyst=False):
@@ -199,7 +210,9 @@ class OpenAI:
             schema = json.loads((PROMPTS / "analista.json").read_text())
             tools = []
         else:
-            schema = CONTRACT["output_schema"]
+            schema = copy.deepcopy(CONTRACT["output_schema"])
+            schema["properties"]["mensagens"]["maxItems"] = 5
+            schema["properties"]["mensagens"]["items"]["maxLength"] = 300
             tools = [
                 {
                     "type": "function",
@@ -214,7 +227,7 @@ class OpenAI:
             d = self.post(
                 "/responses",
                 json={
-                    "model": self.model,
+                    "model": self.analyst_model if analyst else self.model,
                     "store": False,
                     "instructions": prompt,
                     "input": inputs,
@@ -246,7 +259,10 @@ class OpenAI:
                 if analyst:
                     Draft7Validator(strict(schema)).validate(output)
                     return output
-                return validate_output(output)
+                try:
+                    return validate_output(output)
+                except ValueError as exc:
+                    raise OutputValidationError(str(exc), output) from None
             inputs.extend(d["output"])
             for call in calls:
                 name = call["name"]
@@ -287,26 +303,9 @@ class OpenAI:
             "audio/webm",
             "audio/x-wav",
         ):
-            d = self.post(
-                "/audio/transcriptions",
-                data={"model": "gpt-4o-mini-transcribe", "language": "pt"},
-                files={
-                    "file": (
-                        "audio."
-                        + {
-                            "audio/ogg": "ogg",
-                            "audio/mpeg": "mp3",
-                            "audio/mp4": "mp4",
-                            "audio/wav": "wav",
-                            "audio/webm": "webm",
-                            "audio/x-wav": "wav",
-                        }[mime],
-                        raw,
-                        mime,
-                    )
-                },
-            )
-            return d["text"]
+            if self.transcription is None:
+                raise RuntimeError("groq_nao_configurada")
+            return self.transcription.transcribe(mime, raw)
         if mime in ("image/png", "image/jpeg", "image/webp"):
             d = self.post(
                 "/responses",

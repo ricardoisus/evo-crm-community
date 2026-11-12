@@ -80,3 +80,19 @@ Para interromper/reverter: desabilitar envios no CRM, zerar réplicas do runtime
 - [Modelos](https://developers.openai.com/api/docs/models) e [preços](https://developers.openai.com/api/docs/pricing), consultados em 11/11/2026.
 - [Calendar events.insert](https://developers.google.com/workspace/calendar/api/v3/reference/events/insert), `conferenceDataVersion=1` e `sendUpdates=all`.
 - [n8n Webhook Header Auth](https://docs.n8n.io/integrations/builtin/credentials/webhook/).
+
+## A7: bateria limitada e áudio Groq
+
+Continuação em branch `codex/evo-agentes-a7-bateria`, sem merge/deploy. Snapshots A6 v1.2 e manifesto sincronizados. A transcrição usa exclusivamente Groq `whisper-large-v3-turbo`, `language=pt`. O limite existente de 20 MiB fica abaixo do corte legado de 23 MB; arquivos maiores seguem recusados, sem ampliar escopo. Chave por `GROQ_API_KEY_FILE`; A9 deve cadastrar o secret `vetorial_agent_groq`, ainda não criado.
+
+Executor: `python -m evals.a7 --output DIRETORIO --phase probe`, depois `--phase sample`; inspecionar a amostra antes de `--phase full --leader MODELO`. Somente Luna/Sol. Medidor persistente inclui analista e mídia, reserva custo antes de cada chamada e soma tokens retornados às tarifas oficiais Standard. Teto US$0,50 OpenAI e US$0,10 Groq. Pendência de uso por falha de transporte impede reinício/retry cego. BudgetStop escapa aos handlers do worker. Não apagar ou zerar o medidor para continuar uma etapa.
+
+`--phase render` gera conversas legíveis sem chamar API nem ler credenciais. Transcrições parciais são preservadas se houver bloqueio. Medição usa relógio real para API e digitação até o primeiro envio no stub; não comprova transporte WhatsApp. Seis resultados da amostra são reaproveitados no lote do líder na mesma versão.
+
+O adaptador admite `OPENAI_ANALYST_MODEL` separado do atendimento; sem a variável, usa o mesmo modelo. A seleção depende da amostra A7. `service_tier=default` fixa as próximas chamadas em Standard. `python -m evals.cost_audit DIRETORIO` recalcula os custos offline com cache padrão de 30 minutos e preserva o acumulado conservador do guarda. Valores projetados para 100 conversas são de conversas sintéticas curtas, com cenário de cache frio separado.
+
+Resultado da amostra A7: Luna 3/6 e Sol 2/6, após conferir todos os requisitos de C13, sem erros de execução. Luna lidera para o lote completo; Sol mantém falha bloqueante de identidade C26. Ambos falham em C13/registro inicial, C05/origem e C07/encerramento. O template aponta Luna para os dois papéis como candidato, sem ativação. Resultado completo e custos ficam em `entregas/A7-bateria-final.md` na frente Evo CRM Agentes; revisão A8 obrigatória.
+
+Reparo técnico A7 `add9aab`: o schema enviado limita cinco blocos de 300 caracteres; saídas rejeitadas são preservadas pelo avaliador sintético. `--resume-after-fix COMMIT` aceita apenas parada técnica conhecida com uso totalmente contabilizado, arquiva a tentativa inconclusiva e preserva todos os gastos. Crédito, teto ou consumo pendente não podem ser liberados por essa opção. Primeiro bloco: digitação limitada a 6s; seguintes: 12s. TCP connect=1s/read=60s e keepalive=60s evitam a espera IPv6 observada no Mac. O lote preserva versões anteriores para auditoria; não comprova SLA em produção.
+
+Completa Luna: 22/30 atendem checks e requisitos, oito falhas comportamentais (C05/C07/C08/C13/C16/C22/C25/C28), sem execução inconclusiva restante; C24 original arquivado. Amostra Sol: 2/6. Não é homologação. A9 usa o telefone pessoal da linha mais recente do Opus no estado canônico, já informado; ativação depende das etapas seguintes.

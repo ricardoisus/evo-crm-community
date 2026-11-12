@@ -12,6 +12,7 @@ from .security import verify
 from .policy import Policy
 from .store import Store
 from .adapters import CRM, OpenAI
+from .transcription import GroqTranscription
 from .runtime import Worker
 from .agenda import Agenda, GoogleGateway
 
@@ -59,7 +60,9 @@ def build():
     store = Store(database)
     bridge_secret = secret("VETORIAL_AGENT_SECRET")
     crm = CRM(os.environ["CRM_URL"], bridge_secret)
-    model = OpenAI(api_key, os.environ["OPENAI_MODEL"])
+    model = OpenAI(api_key, os.environ["OPENAI_MODEL"],
+                   transcription=GroqTranscription(secret("GROQ_API_KEY")),
+                   analyst_model=os.environ.get("OPENAI_ANALYST_MODEL"))
 
     def authorize(owner, key):
         state = crm.request(owner)
