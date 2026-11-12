@@ -6,7 +6,8 @@ class GroqTranscription:
     def __init__(self, key):
         self.key = key
         self.http = httpx.Client(
-            base_url="https://api.groq.com/openai/v1", timeout=60,
+            base_url="https://api.groq.com/openai/v1", timeout=httpx.Timeout(60, connect=1, pool=5),
+            limits=httpx.Limits(keepalive_expiry=60),
             headers={"Authorization": "Bearer " + key},
         )
         self.usage = []

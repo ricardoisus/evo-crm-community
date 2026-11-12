@@ -169,6 +169,7 @@ def main():
                 except BudgetStop:
                     write(path,{'model':model,'scenario':f'C{n:02}','status':'INCONCLUSIVO_EXECUCAO','checks':{'budget_completed':False},'turns':json.loads(partial.read_text()) if partial.exists() else [], 'note':'Execução interrompida; consumo parcial em meter.json. Não aprovado.'})
                     raise
+                result['transport_connect_timeout_seconds']=ai.http.timeout.connect
                 result['requested_service_tier']='default'
                 result['analyst_model']=args.analyst or model
                 scenario_checks(result)

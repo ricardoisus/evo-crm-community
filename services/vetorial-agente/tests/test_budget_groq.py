@@ -196,3 +196,13 @@ def test_malformed_config_does_not_expose_secret_in_error(monkeypatch):
         credentials()
     assert str(exc.value)=='credenciais_indisponiveis_SyntaxError'
     assert 'sensitive' not in str(exc.value)
+
+
+def test_provider_connection_deadlines_are_short_without_cutting_generation():
+    ai=OpenAI('synthetic','gpt-6-luna',project='proj_synthetic')
+    groq=GroqTranscription('synthetic')
+    for adapter in [ai,groq]:
+        assert adapter.http.timeout.connect==1
+        assert adapter.http.timeout.read==60
+        assert adapter.http.timeout.pool==5
+        adapter.http.close()

@@ -142,7 +142,8 @@ class OpenAI:
         self.transcription = transcription
         self.http = httpx.Client(
             base_url="https://api.openai.com/v1",
-            timeout=60,
+            timeout=httpx.Timeout(60, connect=1, pool=5),
+            limits=httpx.Limits(keepalive_expiry=60),
             headers={"Authorization": "Bearer " + key, "OpenAI-Project": project},
         )
         self.usage = []
