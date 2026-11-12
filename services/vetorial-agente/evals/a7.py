@@ -22,18 +22,23 @@ SAMPLE = [13,26,30,4,5,7]
 
 
 def credentials():
-    # Private input stays in process memory; never source shell or display the file.
-    raw = Path('/Users/ricardohenrique/Private/openai.env').read_text()
-    match = re.search(r'sk-[A-Za-z0-9_-]+', raw)
-    if not match:
-        raise RuntimeError('chave_openai_ausente')
-    key = match.group()
-    config_path = Path('/Users/ricardohenrique/Library/CloudStorage/GoogleDrive-ricardoisus@gmail.com/Meu Drive/Tecnologia/py/config.py')
-    tree = ast.parse(config_path.read_text())
-    config = next(ast.literal_eval(n.value) for n in tree.body
-                  if isinstance(n, ast.Assign) and any(isinstance(t,ast.Name) and t.id=='CONFIG' for t in n.targets))
-    groq = config.get('GROQ_API_KEY') or config.get('API_KEY_CHATBOT')
-    return key, groq
+    try:
+        # Private input stays in process memory; never source shell or display the file.
+        raw = Path('/Users/ricardohenrique/Private/openai.env').read_text()
+        match = re.search(r'sk-[A-Za-z0-9_-]+', raw)
+        if not match:
+            raise RuntimeError('chave_openai_ausente')
+        key = match.group()
+        config_path = Path('/Users/ricardohenrique/Library/CloudStorage/GoogleDrive-ricardoisus@gmail.com/Meu Drive/Tecnologia/py/config.py')
+        tree = ast.parse(config_path.read_text())
+        config = next(ast.literal_eval(n.value) for n in tree.body
+                      if isinstance(n, ast.Assign) and any(isinstance(t,ast.Name) and t.id=='CONFIG' for t in n.targets))
+        groq = config.get('GROQ_API_KEY') or config.get('API_KEY_CHATBOT')
+        if not isinstance(groq,str) or not groq:
+            raise RuntimeError('chave_groq_ausente')
+        return key, groq
+    except Exception as exc:
+        raise RuntimeError('credenciais_indisponiveis_' + type(exc).__name__) from None
 
 
 def client(model, meter, key, groq_key, analyst_model=None):

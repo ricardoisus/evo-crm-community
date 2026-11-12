@@ -184,3 +184,15 @@ def test_c13_requires_profession_and_high_interest_before_first_explanation(firs
     scenario_checks(row)
     assert not row['checks']['profession_and_high_interest_before_explanation']
     assert row['status']=='FALHA_AUTOMATICA'
+
+
+def test_malformed_config_does_not_expose_secret_in_error(monkeypatch):
+    from evals.a7 import credentials
+    from pathlib import Path
+    def fake_read(path,*a,**kw):
+        return 'sk-synthetic' if path.name=='openai.env' else "CONFIG = {'GROQ_API_KEY': 'sensitive-value\n"
+    monkeypatch.setattr(Path,'read_text',fake_read)
+    with pytest.raises(RuntimeError) as exc:
+        credentials()
+    assert str(exc.value)=='credenciais_indisponiveis_SyntaxError'
+    assert 'sensitive' not in str(exc.value)
