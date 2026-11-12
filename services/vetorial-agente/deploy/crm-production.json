@@ -1,0 +1,18 @@
+{
+  "image": "ghcr.io/ricardoisus/evo-ai-crm-community:vetorial-7d55b91@sha256:470656fe2180abee288d8b2b071af8d14bd4c272baa0c926fc53475d7335bb3b",
+  "environment": {
+    "VETORIAL_AGENT_INBOX_ID": "702de859-a676-4af9-a2a1-806da82785d8",
+    "VETORIAL_AGENT_PIPELINE_ID": "86abea7e-e571-4060-91df-26d93f788170",
+    "VETORIAL_AGENT_BOT_ID": "CONFIGURE_CREATED_BOT_ID",
+    "VETORIAL_AGENT_URL": "http://10_vetorial_agente_vetorial-agente:8080",
+    "VETORIAL_AGENT_ALLOWLIST": "+5521973801603",
+    "VETORIAL_AGENT_INTERNAL_NUMBERS": "+554792548551",
+    "VETORIAL_AGENT_ALL_CONTACTS": "false",
+    "VETORIAL_AGENT_ANALYSIS_ALL": "false",
+    "VETORIAL_AGENT_SEND_ENABLED": "true",
+    "VETORIAL_AGENT_SECRET_FILE": "/run/secrets/vetorial_agent_bridge"
+  },
+  "secrets": [
+    "vetorial_agent_bridge"
+  ]
+}

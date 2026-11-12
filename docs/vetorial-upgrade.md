@@ -218,3 +218,34 @@ callbacks are suppressed. Human phone echoes carry
 and concurrent provider echoes in A1's idempotent output implementation.
 Operational evidence: Vetorial activity repository,
 `Vetorial - Evo CRM Agentes/entregas/C2-canal-anexar.md` and its sanitized JSONs.
+
+## Agentes Vetorial — A14, 2026-11-12
+
+CRM PR31 e runtime PR10→11→12→13 incorporados em main (739a1f0/6512d2f).
+Controles finais: CRM PR32 (7d55b91), runtime PR14 (b848276).
+Imagens geradas fora do Actions, com provenance/SBOM, tag imutável e digest:
+
+- CRM/Sidekiq: `ghcr.io/ricardoisus/evo-ai-crm-community:vetorial-7d55b91@sha256:470656fe2180abee288d8b2b071af8d14bd4c272baa0c926fc53475d7335bb3b`.
+- Runtime: `ghcr.io/ricardoisus/evo-crm-community/vetorial-agente:vetorial-b848276@sha256:823b52eb9c60aec69a1a402b6f50f60a1704eedd60b3257dfe93206ab8bc6db3`.
+
+Configuração de produção sem segredos em `services/vetorial-agente/deploy/stack.production.json` e `crm-production.json`.
+Aplicar pelo Portainer, stacks 77/78 e nova `10_vetorial_agente`, rede `network_public`.
+Criar identidade AgentBot sem AgentBotInbox e preencher somente seu UUID em CRM.
+Bootstrap dedicado em `deploy/bootstrap.sql`; migrar CRM20261112030000 e banco
+vetorial_agente antes dos serviços, com stacks temporárias Portainer e restart none.
+Role de aplicação recebe apenas CONNECT/USAGE/SELECT/INSERT/UPDATE; role DDL perde LOGIN após migração.
+Secrets Swarm por arquivos; nunca incluir valores em compose ou argumentos.
+
+Backup privado no manager01: `/root/evo_crm/backups/agentes-a14-20261112` (dump evolution_crm,
+n8n_hfer3, Portainer DB, composes/specs/digests anteriores; conferir SHA256 e pg_restore).
+Calendly HTTP400 de conexão externa em A14: disponibilidade fecha sem inventar horários.
+Google alvo `ricardohenrique@agenciavetorial.com`; gateway n8n versionado com Header Auth
+própria e credencial Google existente, sem executar criação real. Piloto só Ricardo;
+atendimento e analista Luna, analysis_all/all_contacts false.
+
+Reversão: `agent-control.py off`, restaurar composes77/78 do backup pelo Portainer
+(CRM65d5615 digest98fed57fa26d6f3b8fea12646a2429b22522666d1cf00ec41d3917473b6406bd),
+preservar tabelas/outboxes/eventos e manter runtime em zero réplicas. Desativar somente
+o gateway novo, sem alterar credencial Google ou workflows existentes.
+Não restaurar dump sobre dados novos. Resultado operacional e prova de eventos reais
+na entrega canônica `Vetorial - Evo CRM Agentes/entregas/A14-implantacao.md`.
