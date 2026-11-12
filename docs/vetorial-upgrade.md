@@ -221,63 +221,46 @@ Operational evidence: Vetorial activity repository,
 
 ## Agentes Vetorial — A14, 2026-11-12
 
-CRM PR31 e runtime PR10→11→12→13 incorporados em main (739a1f0/6512d2f).
-Controles finais: CRM PR32 (7d55b91), runtime PR14 (b848276).
-Imagens geradas fora do Actions, com provenance/SBOM, tag imutável e digest:
+Piloto implantado pelo Portainer, somente +5521973801603; atendimento e analista
+Luna. all_contacts e analysis_all false. Código base CRM31 e runtime10→11→12→13
+incorporado em739a1f0/6512d2f; controles finais CRM32/7d55b91 e runtime14/b848276.
 
-- CRM/Sidekiq: `ghcr.io/ricardoisus/evo-ai-crm-community:vetorial-7d55b91@sha256:470656fe2180abee288d8b2b071af8d14bd4c272baa0c926fc53475d7335bb3b`.
-- Runtime: `ghcr.io/ricardoisus/evo-crm-community/vetorial-agente:vetorial-b848276@sha256:823b52eb9c60aec69a1a402b6f50f60a1704eedd60b3257dfe93206ab8bc6db3`.
+- CRM/Sidekiq stacks77/78: `ghcr.io/ricardoisus/evo-ai-crm-community:vetorial-7d55b91@sha256:470656fe2180abee288d8b2b071af8d14bd4c272baa0c926fc53475d7335bb3b`.
+- Runtime stack102: `ghcr.io/ricardoisus/evo-crm-community/vetorial-agente:vetorial-b848276@sha256:823b52eb9c60aec69a1a402b6f50f60a1704eedd60b3257dfe93206ab8bc6db3`.
 
-Configuração de produção sem segredos em `services/vetorial-agente/deploy/stack.production.json` e `crm-production.json`.
-Aplicar pelo Portainer, stacks 77/78 e nova `10_vetorial_agente`, rede `network_public`.
-Criar identidade AgentBot sem AgentBotInbox e preencher somente seu UUID em CRM.
-Bootstrap dedicado em `deploy/bootstrap.sql`; migrar CRM20261112030000 e banco
-vetorial_agente antes dos serviços, com stacks temporárias Portainer e restart none.
-Role de aplicação recebe apenas CONNECT/USAGE/SELECT/INSERT/UPDATE; role DDL perde LOGIN após migração.
-Secrets Swarm por arquivos; nunca incluir valores em compose ou argumentos.
+Build amd64 fora do Actions com provenance/SBOM. Configuração sem segredos em
+`services/vetorial-agente/deploy/stack.production.json` e `crm-production.json`.
+AgentBot62f2af76-ed7f-4118-8d8f-ac11e12fa73c sem vínculo AgentBotInbox.
+Migração CRM20261112030000 aplicada antes dos serviços; banco vetorial_agente com
+sete tabelas, aplicação sem DDL/DELETE, role DDL sem LOGIN/senha após uso.
+Stacks temporárias100/101 e secret DDL removidos; secrets de aplicação permanecem
+somente no Swarm. Backup privado no manager01:
+`/root/evo_crm/backups/agentes-a14-20261112`, com dumps evolution_crm/n8n_hfer3,
+Portainer DB, composes/specs antes/depois, pg_restore e SHA256 conferidos.
 
-Backup privado no manager01: `/root/evo_crm/backups/agentes-a14-20261112` (dump evolution_crm,
-n8n_hfer3, Portainer DB, composes/specs/digests anteriores; conferir SHA256 e pg_restore).
-Calendly HTTP400 de conexão externa em A14: disponibilidade fecha sem inventar horários.
-Google alvo `ricardohenrique@agenciavetorial.com`; gateway n8n versionado com Header Auth
-própria e credencial Google existente, sem executar criação real. Piloto só Ricardo;
-atendimento e analista Luna, analysis_all/all_contacts false.
+Agenda vigente: conta Calendly ricardohenrique-hfer3, tipo Consultar horários
+c6ebc6c3-795a-456e-a509-07ac2431fd29 (40min, buffers10min); Google Trabalho
+ricardohenrique@agenciavetorial.com recebe45min. Secret de Private é
+CALENDLY_TOKEN_RICARDO, implantado como vetorial_agent_calendly_ricardo_a14 e
+montado no target vetorial_agent_calendly. Token legado de outra conta não é usado.
+Correção contemporânea3d8c0c0 incorporada por f6c57c3/PR20; sem mudar binário.
+Runtime retornou18 horários reais. O teste externo Sonnet, em estado.md da frente,
+comprovou criação/Meet/conflito/remoção sem attendees; A14 fez somente leitura.
 
-Reversão: `agent-control.py off`, restaurar composes77/78 do backup pelo Portainer
-(CRM65d5615 digest98fed57fa26d6f3b8fea12646a2429b22522666d1cf00ec41d3917473b6406bd),
-preservar tabelas/outboxes/eventos e manter runtime em zero réplicas. Desativar somente
-o gateway novo, sem alterar credencial Google ou workflows existentes.
-Não restaurar dump sobre dados novos. Resultado operacional e prova de eventos reais
-na entrega canônica `Vetorial - Evo CRM Agentes/entregas/A14-implantacao.md`.
+Gateway n8n0A8x1SP5IXvHctuq ativo com Header Auth própria e Google8plZrE3YozmTzatm.
+Free/busy200 com alvo correto, list200, get inexistente404, sem chave403.
+Correção n8n2.10.3/PR18: sendBody dinâmico perdeu o corpo (Google400 Missing timeMin);
+mesmo caso com true literal200. Gateway usa IF e dois nós com switches literais,
+sem gravação de execuções; teste em `deploy/calendar-gateway.test.mjs`.
 
-A14 concluída em 12/11: stack102 criada pelo Portainer; ponte, CRM e Sidekiq ativos
-somente para o telefone pessoal autorizado, ambos os controles amplos false. Migração
-CRM20261112030000 aplicada; sete tabelas no banco dedicado, aplicação sem DDL/DELETE,
-role DDL sem LOGIN. Stacks temporárias100/101 e secret efêmero DDL removidos.
-Runtime/CRM/frontend e readiness públicos200; entrada runtime sem HMAC401.
-Gateway n8n `0A8x1SP5IXvHctuq` ativo: free/busy200 com calendário correto, list200,
-get de ID inexistente404, sem chave403. Zero evento criado.
+Runtime/CRM/Sidekiq/frontend1/1, readiness200; ingress sem HMAC401. Sem eventos
+naturais novos na janela A14, portanto primeiro atendimento/analista e negação por
+logs ainda aguardam ocorrência real. Nenhuma inferência paga iniciada.
 
-Correção de transporte n8n2.10.3: comparação isolada comprovou que `sendBody`
-dinâmico perde o corpo (Google400 Missing timeMin); o mesmo caso com true literal
-retorna200. Gateway usa IF e dois nós HTTP com switches literais; teste Node em
-`deploy/calendar-gateway.test.mjs`. Artefato final incorporado pelo PR18 (1576de9),
-sem mudança no código da imagem runtime b848276. PRs16/17 registram a investigação;
-o diagnóstico temporário foi removido do artefato final.
-
-Sem novos eventos naturais na janela A14: logs de contato fora da lista e resposta
-real do agente ainda não foram observados. Eventos pré-runtime permanecem13 incoming
-com ID do provedor. Gate/configuração e testes comprovam restrição; não equivalem
-à validação do primeiro atendimento. Calendly continua indisponível por conexão
-externa; Ricardo reconecta Google no Calendly e inicia o teste pelo celular.
-
-A14, correção contemporânea de agenda: a linha nova do Opus em estado.md substitui
-o token/tipo legados. Conta certa ricardohenrique-hfer3, tipo Consultar horários
-c6ebc6c3-795a-456e-a509-07ac2431fd29 (40min, buffers10min); evento Google continua45min.
-Consumir CALENDLY_TOKEN_RICARDO de Private/calendly.env. Rotação sem gravar valores:
-novo secret vetorial_agent_calendly_ricardo_a14, target vetorial_agent_calendly,
-mesmo CALENDLY_TOKEN_FILE. Atualizar apenas stack102 via Portainer; guardar secret
-anterior como referência de reversão, sem afetar outros consumidores.
-O teste externo do Sonnet no estado.md confirmou bloqueio/liberação do Calendly
-por evento45min na agenda Trabalho; A14 não criou eventos e revalida só leitura.
-A conclusão de indisponibilidade anterior aplicava-se à conta legada e foi superada.
+Operação: `deploy/agent-control.py pilot|all|off`; all exige decisão posterior de
+Ricardo e revisão das exclusões da equipe. Não retoma pausas antigas. Reversão:
+off, restaurar composes77/78 do backup pelo Portainer (CRM65d5615 digest
+98fed57fa26d6f3b8fea12646a2429b22522666d1cf00ec41d3917473b6406bd), manter runtime
+parado e preservar tabelas/outbox/eventos. Desativar só gateway novo se necessário.
+Não restaurar dump sobre dados novos. Entrega canônica:
+`Vetorial - Evo CRM Agentes/entregas/A14-implantacao.md`, com runbook no mesmo projeto.
