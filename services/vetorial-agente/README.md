@@ -15,7 +15,7 @@ Serviço próprio decidido na K1. Recebe a outbox autenticada do CRM e responde 
 | Mídia | Download autenticado do anexo da própria conversa; até 20 MiB; 10 anexos/contexto; áudio transcrito, visão e PDF até 40 páginas; falha vira `media_unavailable` |
 | Histórico | Paginação com cursor composto, máximo 1000 mensagens; privado excluído do contexto de atendimento; sem threads/Assistants |
 | Saída | JSON validado; até 5 blocos de 300 caracteres; digitação 1500 caracteres/min, até 12 s/bloco; emoji único; silêncio cria nota privada e pausa |
-| Agenda | Free/busy Google, expediente explícito, janela de 14 dias, 45 min, fuso São Paulo, Meet e convite; consulta expira em 10 min; rechecagem antes da mutação; evento vinculado à conversa |
+| Agenda | Disponibilidade pelo Calendly (tipo de evento de 45 min; expediente e conflitos aplicados por ele), criação na agenda Google `ricardohenrique@agenciavetorial.com` (Trabalho) após rechecar Calendly + free/busy Google; janela de 14 dias, 45 min, fuso São Paulo, Meet e convite; consulta expira em 10 min; rechecagem antes da mutação; evento vinculado à conversa |
 | Analista | 5 min após a última atividade; resumo, campos, etiquetas, sugestão em nota privada. Nunca move SQL nem outras etapas automaticamente |
 | Proteções | Caixa fixa, lista vazia nega tudo, equipe bloqueada; 20 saídas/h e 3 ações mutáveis de agenda/h por conversa; até 3 tentativas por versão, inclusive análise |
 
@@ -39,7 +39,9 @@ Campos existentes de origem desconhecida/humana são preservados. O agente só c
 
 `agenda.py` aplica política, autorização, oferta, lock e recibos; `deploy/calendar-gateway.n8n.json` é somente um gateway Google restrito, inativo. OAuth permanece no n8n. Não é um runtime de atendimento.
 
-A4 deve configurar no gateway o calendar ID original da agenda Trabalho | Ag. Vetorial e uma credencial Header Auth própria (`X-Vetorial-Calendar-Key`). Selecionar a credencial Google existente após reconexão. O JSON não contém segredos e não foi importado no n8n. Desativar gravação de execuções está configurado no artefato. Não reutilizar tokens do fluxo legado.
+Decisão de Ricardo (12/11/2026): **disponibilidade vem do Calendly** e **o compromisso é criado pela API do Google Calendar** na agenda `ricardohenrique@agenciavetorial.com` (nome "Trabalho", primária da conta, fuso São Paulo). A agenda antiga "Trabalho | Ag. Vetorial" não existe mais na conta conectada. O gateway já fixa esse calendar ID; a credencial n8n `8plZrE3YozmTzatm` ("Google Calendar account | Ricardo Vetorial") enxerga a agenda com papel `owner` e free/busy sem erro (verificado em 12/11/2026). Falta criar no n8n a credencial Header Auth própria (`X-Vetorial-Calendar-Key`), importar e ativar o gateway. O JSON não contém segredos. Desativar gravação de execuções está configurado no artefato.
+
+Calendly: o runtime chama direto `GET https://api.calendly.com/event_type_available_times` com o PAT de Ricardo (secret `vetorial_agent_calendly`, variável `CALENDLY_TOKEN_FILE`) e o tipo fixo `CALENDLY_EVENT_TYPE` (45 Minute Meeting, `d604c9e1-…`). Intervalos acima de 7 dias são divididos; qualquer erro HTTP fecha a agenda (`agenda_indisponivel`), sem horário inventado. **User-Agent explícito é obrigatório**: o Cloudflare do Calendly responde 403 ao User-Agent padrão das bibliotecas, foi essa a causa do 403 visto na K1. A consulta não chama o Google; no agendamento o slot precisa continuar no Calendly e livre no free/busy Google, sob o lock. Para o Calendly enxergar o evento criado direto no Google, a agenda Trabalho precisa estar entre as agendas de conflito do Calendly.
 
 O gateway fixa calendário, domínio Google, operações, duração, Meet e `sendUpdates=all`. Não recebe URL/calendar ID do LLM. Datas aceitas: hoje, amanhã, esta/essa semana, próxima semana, próximos dias e intervalo ISO. Pedido não reconhecido retorna erro para esclarecer; não inventa disponibilidade.
 
@@ -61,13 +63,13 @@ Capturas inspecionadas: [pipeline](docs/pipeline-estados.png), [conversa pausada
 ## Candidato para A4
 
 1. Revisar e incorporar os dois PRs; corrigir comportamento em A3 e sincronizar prompts/manifesto. Não ativar com falhas de escopo/agenda pendentes.
-2. Revalidar a agenda, janelas e telefone pessoal; lista vazia permanece fechada. Selecionar pipeline comercial real. Não adivinhar IDs/telefone.
+2. Revalidar Calendly, gateway Google e telefone pessoal; lista vazia permanece fechada. Selecionar pipeline comercial real. Não adivinhar IDs/telefone.
 3. Fazer backup de banco, stacks/compose, env e digests conforme `docs/vetorial-upgrade.md` e SSOT. Portainer continua dono das stacks.
 4. Criar banco `vetorial_agente` e roles próprias. Migrar com role DDL antes dos serviços (`python -m vetorial_agent migrate`). Role do runtime recebe somente CONNECT/USAGE/SELECT/INSERT/UPDATE nas suas tabelas; não acessa `evolution_crm`.
 5. Migrar CRM aditivamente (`20261112030000`) antes de atualizar web/Sidekiq. Não editar/recriar banco existente.
 6. Publicar imagens amd64 imutáveis no GHCR e fixar digests. `deploy/stack.template.yml` é um template deliberadamente incompleto, sem porta pública e sem credenciais reais.
 7. CRM: configurar `VETORIAL_AGENT_INBOX_ID`, `VETORIAL_AGENT_PIPELINE_ID`, `VETORIAL_AGENT_BOT_ID`, `VETORIAL_AGENT_URL`, lista e equipe; segredo compartilhado por arquivo Swarm; manter `VETORIAL_AGENT_SEND_ENABLED=false` até homologar. AgentBot serve como identidade, sem vínculo nativo que ative delegação genérica.
-8. Runtime: secrets de banco/OpenAI/HMAC/gateway, URLs internas, modelo escolhido, mesmo inbox/lista/equipe e expediente. Registrar labels na UI com cores legíveis. Não alterar Evolution/Rabbit/AMH/Typebot/Mautic.
+8. Runtime: secrets de banco/OpenAI/HMAC/gateway/Calendly, URLs internas, modelo escolhido, mesmo inbox/lista/equipe e `CALENDLY_EVENT_TYPE`. Registrar labels na UI com cores legíveis. Não alterar Evolution/Rabbit/AMH/Typebot/Mautic.
 9. Verificar réplicas 1/1, `/ready` 200, CRM/readiness e frontend 200. Só Ricardo inicia teste no seu número. Separar implantação de evento real.
 
 Para assumir: enviar como humano ou atribuir a pessoa. Para devolver: remover responsável e reaplicar `ia-ativa`. Reaplicar significa remover a etiqueta antiga, se houver, e adicioná-la novamente. Agente não retoma ao chegar nova mensagem.

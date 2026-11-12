@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy.engine import make_url
 from vetorial_agent.store import Store
 from vetorial_agent.policy import Policy
-from vetorial_agent.agenda import Agenda
+from vetorial_agent.agenda import Agenda, FixedAvailability
 from .test_agenda import GoogleStub, SLOT
 from datetime import datetime, timezone
 
@@ -56,7 +56,7 @@ def test_pg_calendar_serializes_overlapping_bookings_and_replays():
     a = Agenda(
         s,
         g,
-        [{"weekday": 2, "start": "14:00", "end": "16:00"}],
+        FixedAvailability([{"weekday": 2, "start": "14:00", "end": "16:00"}]),
         clock=lambda: datetime(2026, 11, 11, 12, tzinfo=timezone.utc),
         authorize=lambda o, k: True,
     )

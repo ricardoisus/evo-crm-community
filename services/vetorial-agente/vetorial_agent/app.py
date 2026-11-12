@@ -1,7 +1,6 @@
 """Internal HMAC ingress; no public control port, no startup schema mutations."""
 
 import asyncio
-import json
 import os
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -14,7 +13,7 @@ from .store import Store
 from .adapters import CRM, OpenAI
 from .transcription import GroqTranscription
 from .runtime import Worker
-from .agenda import Agenda, GoogleGateway
+from .agenda import Agenda, CalendlyAvailability, GoogleGateway
 
 
 class Event(BaseModel):
@@ -78,7 +77,9 @@ def build():
             os.environ.get("CALENDAR_GATEWAY_URL", ""),
             secret("CALENDAR_GATEWAY_SECRET"),
         ),
-        json.loads(os.environ.get("CALENDAR_WORKING_WINDOWS", "[]")),
+        CalendlyAvailability(
+            secret("CALENDLY_TOKEN"), os.environ.get("CALENDLY_EVENT_TYPE", "")
+        ),
         authorize=authorize,
     )
     return store, policy, bridge_secret, Worker(store, crm, model, agenda, policy)

@@ -1,6 +1,7 @@
 // n8n Code node, after a Webhook with headerAuth. Never accept calendar IDs/URLs.
 const input = $json.body;
-const calendar = 'CONFIGURE_CALENDAR_TRABALHO_VETORIAL';
+// Agenda "Trabalho" (primária de ricardohenrique@agenciavetorial.com); credencial n8n 8plZrE3YozmTzatm é owner (12/11/2026).
+const calendar = 'ricardohenrique@agenciavetorial.com';
 if (calendar.startsWith('CONFIGURE_')) throw new Error('Calendar not configured');
 const ops = ['get','list','freebusy','insert','patch','delete'];
 if (!input || !ops.includes(input.op)) throw new Error('Invalid operation');
