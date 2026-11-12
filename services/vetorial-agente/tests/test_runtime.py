@@ -397,3 +397,27 @@ def test_first_typing_block_caps_at_six_seconds_next_at_twelve(rig):
     w.crm.hook=lambda kind:sent.append(c()-start) if kind=='send' else None
     assert w.tick()
     assert sent==[6,18]
+
+
+def test_general_gate_keeps_internal_numbers_and_invalid_phones_blocked():
+    p = Policy('box', internal=frozenset([PHONE]), all_contacts=True)
+    assert p.allows('+15550000003')
+    assert p.allows_analysis('+15550000003')
+    for phone in [PHONE, 'invalid', '', '15550000003']:
+        assert not p.allows(phone)
+        assert not p.allows_analysis(phone)
+    assert not Policy('box', frozenset(['*'])).allows('+15550000003')
+    assert not Policy('', all_contacts=True).allows('+15550000003')
+
+
+def test_ignored_contact_is_logged_without_personal_data(rig, caplog):
+    w, c = rig
+    phone = '+15550000003'
+    assert w.store.ingest(event(phone=phone), POLICY, c())
+    assert 'event=ignored reason=outside_allowlist' in caplog.text
+    assert phone not in caplog.text
+    c.now += 301
+    w.tick()
+    w.analyse()
+    assert w.model.calls == 0
+    assert not w.crm.sent
