@@ -158,7 +158,8 @@ def test_readable_conversations_are_generated_without_credentials_or_api(tmp_pat
     import json
     from evals.a7 import main
     (tmp_path/'gpt-6-luna-01.json').write_text(json.dumps({
-        'model':'gpt-6-luna','scenario':'C01','status':'INCONCLUSIVO_EXECUCAO','checks':{},'turns':[]}))
+        'model':'gpt-6-luna','scenario':'C01','status':'INCONCLUSIVO_EXECUCAO','checks':{},'turns':[{'analyst':False,'actions':[],
+        'context':{'messages':[{'role':'user','content':'','media_text':['painel hormonal']} ]}}]}))
     monkeypatch.setattr('evals.a7.credentials',lambda:pytest.fail('leitura indevida de credenciais'))
     monkeypatch.setattr('sys.argv',['evals.a7','--output',str(tmp_path),'--phase','render'])
     main()

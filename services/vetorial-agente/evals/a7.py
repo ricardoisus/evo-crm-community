@@ -103,7 +103,7 @@ def conversations(output):
             if not t['analyst']:
                 for m in t['context']['messages']:
                     lines += [f"**{m['role']}:** {m.get('content','')}", '']
-                    if m.get('media_text'): lines += ['Mídia extraída: '+m['media_text'],'']
+                    if m.get('media_text'): lines += ['Mídia extraída: '+json.dumps(m['media_text'],ensure_ascii=False),'']
             for a in t['actions']:
                 lines += [f"Ferramenta `{a['name']}`: `{json.dumps(a['args'],ensure_ascii=False)}`", '']
             if t.get('output'):
@@ -162,6 +162,7 @@ def main():
                 except BudgetStop:
                     write(path,{'model':model,'scenario':f'C{n:02}','status':'INCONCLUSIVO_EXECUCAO','checks':{'budget_completed':False},'turns':json.loads(partial.read_text()) if partial.exists() else [], 'note':'Execução interrompida; consumo parcial em meter.json. Não aprovado.'})
                     raise
+                result['requested_service_tier']='default'
                 result['analyst_model']=args.analyst or model
                 scenario_checks(result)
                 result['editorial_review']='PENDENTE A8; verificações semânticas na entrega A7'
