@@ -102,3 +102,39 @@ def test_pg_telemetry_duplicate_record_and_persistent_retry():
         return [item['event_id'] for item in batch]
     telemetry.flush(receive, now_ms=1000000)
     assert event['event_id'] in delivered
+
+
+def test_pg_sandbox_budget_serializes_sessions_and_preserves_unknown():
+    from vetorial_agent.sandbox import SandboxBudget, SandboxLimit, calls, sessions
+    from sqlalchemy import select
+    store = setup()
+    actor = 'synthetic-' + str(uuid.uuid4())
+    # A unique future synthetic day isolates the fixed front/day quota from reruns.
+    # Clock never reaches production; this database is guarded by setup().
+    now_ms = 1800000000000 + (uuid.uuid4().int % 100000) * 86400000
+    budget = SandboxBudget(store, clock=lambda: now_ms)
+    def create(_):
+        try:
+            return budget.create(actor_id=actor, deployment_id='synthetic', revision=1,
+                purpose='Concorrência sintética', criteria='Nunca exceder 0,50 por operador',
+                sample_count=3, ceiling=100000)
+        except SandboxLimit:
+            return None
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        accepted = [sid for sid in pool.map(create, range(12)) if sid]
+    assert len(accepted) == 5
+    sid = accepted[0]
+    def reserve(_):
+        try:
+            budget.reserve(sid, actor, str(uuid.uuid4()), 'Olá', 60000)
+            return True
+        except SandboxLimit:
+            return False
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        assert sum(pool.map(reserve, range(12))) == 1
+    restarted = SandboxBudget(Store(URL), clock=lambda: now_ms)
+    with pytest.raises(SandboxLimit):
+        restarted.reserve(sid, actor, str(uuid.uuid4()), 'Olá', 1)
+    with store.engine.connect() as connection:
+        assert connection.execute(select(sessions.c.spent_reserved).where(sessions.c.id == sid)).scalar_one() == 60000
+        assert len(connection.execute(select(calls).where(calls.c.session_id == sid)).all()) == 1

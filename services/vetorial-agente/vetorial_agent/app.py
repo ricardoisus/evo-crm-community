@@ -86,7 +86,7 @@ def build():
     return store, policy, bridge_secret, Worker(store, crm, model, agenda, policy)
 
 
-def create_app(store, policy, bridge_secret, worker=None):
+def create_app(store, policy, bridge_secret, worker=None, *, sandbox=None, authorize_test=None):
     async def loop():
         while True:
             try:
@@ -137,6 +137,43 @@ def create_app(store, policy, bridge_secret, worker=None):
             return Response(status_code=422)
         store.ingest(event, policy)  # ACK follows commit; duplicate ACK is safe.
         return Response(status_code=202)
+
+    @app.post("/test_sessions/{session_id}/turns")
+    async def test_turn(session_id: str, request: Request):
+        from uuid import UUID
+        from .sandbox import SandboxDenied, SandboxLimit
+        # No production default. Browser-supplied identity/revision/destination is forbidden.
+        body = b""
+        async for chunk in request.stream():
+            body += chunk
+            if len(body) > 20000:
+                return Response(status_code=413)
+        if not verify(body, request.headers, bridge_secret, path=request.url.path):
+            return Response(status_code=401)
+        if sandbox is None or authorize_test is None:
+            return Response(status_code=503)
+        try:
+            if str(UUID(session_id)) != session_id:
+                raise ValueError()
+            import json
+            data = json.loads(body)
+            if not isinstance(data, dict) or set(data) != {"request_id", "text"}:
+                raise ValueError()
+            # Trusted CRM bridge checks session owner/admin + inbox + revision + expiry.
+            actor_id = await asyncio.to_thread(authorize_test, session_id)
+            if not actor_id:
+                return Response(status_code=403)
+            result = await asyncio.to_thread(sandbox.turn, session_id, actor_id,
+                                            data['request_id'], data['text'])
+            return {"success": True, "data": result}
+        except SandboxDenied:
+            return Response(status_code=403)
+        except SandboxLimit:
+            return Response(status_code=429)
+        except (ValueError, TypeError):
+            return Response(status_code=422)
+        except Exception:
+            return Response(status_code=503)
 
     return app
 

@@ -65,7 +65,7 @@ class Store:
         self.engine = create_engine(url, pool_pre_ping=True)
 
     def migrate(self):
-        from . import telemetry  # register additive ledger/outbox before operator DDL
+        from . import telemetry, sandbox  # register additive tables before operator DDL
 
         meta.create_all(
             self.engine
