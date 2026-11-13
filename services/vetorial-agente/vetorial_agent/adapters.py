@@ -15,7 +15,15 @@ import re
 from .security import signed
 
 PROMPTS = Path(__file__).resolve().parent / "prompts"
-CONTRACT = json.loads((PROMPTS / "acoes.json").read_text())
+def legacy_contract():
+    return json.loads((PROMPTS / "acoes.json").read_text())
+
+
+def __getattr__(name):
+    if name == "CONTRACT":
+        return legacy_contract()
+    raise AttributeError(name)
+
 
 
 def strict(schema):
@@ -40,7 +48,7 @@ def strict(schema):
 
 
 def resolve(schema, contract=None):
-    contract = CONTRACT if contract is None else contract
+    contract = legacy_contract() if contract is None else contract
     if isinstance(schema, list):
         return [resolve(x, contract) for x in schema]
     if not isinstance(schema, dict):
@@ -51,7 +59,7 @@ def resolve(schema, contract=None):
 
 
 def validate_action(name, args, contract=None):
-    contract = CONTRACT if contract is None else contract
+    contract = legacy_contract() if contract is None else contract
     schema = resolve(contract["actions"][name]["parameters"], contract)
     # Optional null fields from strict output are absent updates, never destructive writes.
     args = {k: v for k, v in args.items() if v is not None}
@@ -71,7 +79,7 @@ class OutputValidationError(ValueError):
 
 
 def validate_output(output, contract=None, limits=None):
-    contract = CONTRACT if contract is None else contract
+    contract = legacy_contract() if contract is None else contract
     limits = limits or {"blocks_per_reply": 5, "chars_per_block": 300}
     Draft7Validator(contract["output_schema"]).validate(output)
     blocks = output["mensagens"]
@@ -122,6 +130,13 @@ class CRM:
         if r.status_code != 200:
             raise RuntimeError("crm_rejeitou_" + str(r.status_code))
         return r.json()
+
+    def configuration(self, deployment_id):
+        path = f"/internal/vetorial_agent/config/{deployment_id}"
+        response = self.http.get(self.base + path,
+                                 headers=signed(b"", self.secret, method="GET", path=path))
+        response.raise_for_status()
+        return response.json()
 
     def history(self, ident):
         first = self.request(ident)
@@ -185,7 +200,7 @@ class OpenAI:
     def run(self, context, act, analyst=False):
         config = self.configuration
         role = config["roles"]["analista" if analyst else "atendimento"] if config is not None else None
-        contract = config["roles"]["atendimento"]["actions"] if config is not None else CONTRACT
+        contract = config["roles"]["atendimento"]["actions"] if config is not None else legacy_contract()
         limits = config["limits"] if config is not None else {"blocks_per_reply": 5, "chars_per_block": 300, "max_output_tokens": 2500, "max_tool_rounds": 8}
         prompt = role["prompt"] if role is not None else (
             PROMPTS / ("analista.md" if analyst else "atendimento.md")

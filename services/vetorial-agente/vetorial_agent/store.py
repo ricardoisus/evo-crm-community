@@ -142,7 +142,7 @@ class Store:
                     version=event["version"],
                     paused=paused,
                     phone=event["phone"],
-                    due=now + (30 if event.get("audio") else 20),
+                    due=now + policy.behavior.get("audio_debounce_ms" if event.get("audio") else "text_debounce_ms", 30000 if event.get("audio") else 20000) / 1000,
                     last_event=now,
                     lease=0,
                     attempts=0,
@@ -203,7 +203,7 @@ class Store:
                 )
                 return dict(row, attempts=row["attempts"] + 1)
 
-    def analyse_due(self, now=None):
+    def analyse_due(self, now=None, silence=300):
         now = time.time() if now is None else now
         with self.engine.begin() as c:
             row = (
@@ -214,7 +214,7 @@ class Store:
                             conversations.c.analysed < conversations.c.version,
                             conversations.c.analysis_lease < now,
                             conversations.c.analysis_attempts < 3,
-                            conversations.c.last_event <= now - 300,
+                            conversations.c.last_event <= now - silence,
                         )
                     )
                     .with_for_update(skip_locked=True)

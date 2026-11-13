@@ -223,10 +223,13 @@ class Worker:
                     raise Stale()
                 self.command(row, f"typing:{index}", "typing")
                 # Deterministic 1500 chars/min, bounded; interrupts checked every 0.5 sec.
-                remaining = min(FIRST_BLOCK_TYPING_CAP_SECONDS if index == 0 else 12, max(0.5, len(block) * 60 / 1500))
+                behavior = self.snapshot.payload["behavior"] if self.snapshot else {}
+                interval = behavior.get("recheck_ms", 500) / 1000
+                cap = behavior.get("first_typing_cap_ms" if index == 0 else "next_typing_cap_ms", 6000 if index == 0 else 12000) / 1000
+                remaining = min(cap, max(interval, len(block) * 60 / behavior.get("typing_cpm", 1500)))
                 while remaining > 0:
-                    self.sleep(min(0.5, remaining))
-                    remaining -= 0.5
+                    self.sleep(min(interval, remaining))
+                    remaining -= interval
                     self.guard(ident, version)
                 receipt = self.command(row, suffix, "send", text=block)
                 if receipt.get("status") != "sent":
@@ -288,7 +291,9 @@ class Worker:
     def analyse(self):
         if not self.prepare():
             return False
-        for row in self.store.analyse_due(self.clock()):
+        rows = (self.store.analyse_due(self.clock(), silence=self.snapshot.payload["behavior"]["analysis_silence_ms"] / 1000)
+                if self.snapshot else self.store.analyse_due(self.clock()))
+        for row in rows:
             try:
                 analysis = self.model.run(
                     self.context(row, analysis=True), None, analyst=True

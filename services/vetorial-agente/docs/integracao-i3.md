@@ -63,3 +63,22 @@ POSTGRES_TEST_URL=postgresql+psycopg://postgres@127.0.0.1:55439/vetorial_agent_a
 ```
 
 Resultado: **142 passaram, zero ignorados**, incluindo os quatro testes de `tests/test_postgres.py`; um aviso preexistente Starlette/httpx. Modelo por dublê, US$0. Contêineres sintéticos `evo-i3-postgres` e `evo-i3-redis` iniciados; Docker permanece aberto. Este resultado resolve a lacuna de ambiente da I34 e não constitui aceite integrado R1–R8.
+
+## J2 — seleção exclusiva de fonte no boot
+
+13/11/2026 · Theo/CTO · implementado/testado, sem implantação.
+`VETORIAL_AGENT_CONTROL_SOURCE=crm` exige identificação técnica
+`VETORIAL_AGENT_DEPLOYMENT_ID`; padrão `legacy_transition` conserva A14.
+CRM GET `/internal/vetorial_agent/config/:deployment_id` usa HMAC método/path.
+Boot, ingresso HTTP e factory usam cache/lease; modelo, prompts, contratos,
+ativação, caixa e tempos vêm do snapshot. Contrato legado é carregado sob demanda.
+Sem snapshot: worker não faz claim; `/ready` e `/events` retornam 503. A outbox
+CRM mantém o evento para reentrega. Não há ACK ou fallback para env/arquivo.
+`build(gateway_routes={ref: URL})` recebe mapa técnico confiável para resolver
+`google_gateway_ref`; padrão vazio fecha agenda. A ligação da rota real pertence
+à integração/deploy posterior; não inferir endpoint de produção nesta etapa.
+Teste completo J1 com POSTGRES_TEST_URL: 145 passaram, zero ignorados;
+um aviso preexistente Starlette/httpx. Novo teste bloqueia leitura de arquivos,
+altera env, publica revisão sintética e confere HTTP/debounce/fila preservada.
+Não equivale ao aceite integral R3: guards/efeitos, mídia/agenda e ensaio de
+migração continuam nos itens J seguintes. Sem API paga, merge ou produção.

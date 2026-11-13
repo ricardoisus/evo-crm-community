@@ -36,7 +36,7 @@ def secret(name):
     return Path(path).read_text().strip() if path else ""
 
 
-def build():
+def build_legacy():
     policy = Policy(
         os.environ.get("VETORIAL_AGENT_INBOX_ID", ""),
         frozenset(
@@ -86,6 +86,66 @@ def build():
     return store, policy, bridge_secret, Worker(store, crm, model, agenda, policy)
 
 
+def build(*, gateway_routes=None):
+    # Technical bootstrap only. Default preserves the A14 deployment during transition.
+    source = os.environ.get("VETORIAL_AGENT_CONTROL_SOURCE", "legacy_transition")
+    if source == "legacy_transition":
+        return build_legacy()
+    if source != "crm":
+        raise RuntimeError("Fonte de configuração inválida")
+    from .configuration import ConfigurationCache
+    database, api_key = secret("DATABASE_URL"), secret("OPENAI_API_KEY")
+    if not database.startswith("postgresql") or len(api_key) < 32:
+        raise RuntimeError("Secrets obrigatórios ausentes ou banco sem Postgres")
+    store = Store(database)
+    bridge_secret = secret("VETORIAL_AGENT_SECRET")
+    crm = CRM(os.environ["CRM_URL"], bridge_secret)
+    cache = ConfigurationCache(crm.configuration, os.environ["VETORIAL_AGENT_DEPLOYMENT_ID"])
+    # Routes are fixed technical endpoints; no behavior env is read by this factory.
+    gateway_routes = {} if gateway_routes is None else dict(gateway_routes)
+
+    def configure(snapshot):
+        payload = snapshot.payload
+        try:
+            activation = payload["activation"]
+            inboxes = payload["binding"]["inbox_ids"]
+            if len(inboxes) != 1:
+                raise ValueError("Vínculo inválido")
+            if any(activation[role] not in ("off", "pilot", "all") for role in ("atendimento", "analista")):
+                raise ValueError("Ativação inválida")
+            policy = Policy(
+                str(inboxes[0]), frozenset(activation["allowlist"]),
+                frozenset(activation["internal_numbers"]),
+                analysis_all=activation["analista"] == "all",
+                all_contacts=activation["atendimento"] == "all",
+                attendance_enabled=activation["atendimento"] != "off",
+                analysis_enabled=activation["analista"] != "off",
+                behavior=payload["behavior"],
+            )
+            model = OpenAI(api_key, None, snapshot=snapshot,
+                           transcription=GroqTranscription(secret("GROQ_API_KEY")))
+            integration = payload["integrations"]
+            if integration["google_gateway_ref"] != "vetorial-calendar-v1":
+                raise ValueError("Gateway inválido")
+            def authorize(owner, key):
+                current = cache.pin()
+                if current.fence() != snapshot.fence():
+                    return False
+                state = crm.request(owner)
+                return not state["paused"] and state["allowed"] and key.startswith(f"{owner}:{state['version']}:agenda:")
+            agenda = Agenda(store, GoogleGateway(gateway_routes.get(integration["google_gateway_ref"], ""), secret("CALENDAR_GATEWAY_SECRET")),
+                            CalendlyAvailability(secret("CALENDLY_TOKEN"), integration["event_type"]),
+                            authorize=authorize)
+            return model, agenda, policy
+        except (KeyError, TypeError, ValueError):
+            from .configuration import ConfigurationUnavailable
+            raise ConfigurationUnavailable("Snapshot incompleto") from None
+
+    worker = Worker(store, crm, None, None, None, configuration_cache=cache, configure=configure)
+    worker.prepare()  # An unavailable CRM does not prevent HTTP boot or consume queues.
+    return store, None, bridge_secret, worker
+
+
 def create_app(store, policy, bridge_secret, worker=None, *, sandbox=None, authorize_test=None):
     async def loop():
         while True:
@@ -115,6 +175,8 @@ def create_app(store, policy, bridge_secret, worker=None, *, sandbox=None, autho
         from .store import conversations
 
         try:
+            if worker and worker.configuration_cache is not None:
+                worker.configuration_cache.pin()
             with store.engine.connect() as c:
                 c.execute(select(conversations.c.id).limit(1))
             return {"ready": True}
@@ -135,7 +197,14 @@ def create_app(store, policy, bridge_secret, worker=None, *, sandbox=None, autho
             event = Event.model_validate_json(body).model_dump()
         except ValueError:
             return Response(status_code=422)
-        store.ingest(event, policy)  # ACK follows commit; duplicate ACK is safe.
+        current_policy = policy
+        if worker and worker.configuration_cache is not None:
+            from .configuration import ConfigurationUnavailable
+            try:
+                _, _, current_policy = worker.configure(worker.configuration_cache.pin())
+            except ConfigurationUnavailable:
+                return Response(status_code=503)  # Upstream durable outbox retries without ACK.
+        store.ingest(event, current_policy)  # ACK follows commit; duplicate ACK is safe.
         return Response(status_code=202)
 
     @app.post("/test_sessions/{session_id}/turns")
