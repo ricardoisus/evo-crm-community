@@ -51,3 +51,15 @@ Testes atuais são offline e não autorizam inferência paga.
 PENDENTE I33/R7: implementar sessões e autorização no CRM (owner/admin/inbox/revisão e grupo de etapa), orçamento canônico Rails ou protocolo atômico único com este ledger, estimador conservador/tarifa versionada e usage por chamada. Não pode haver dois ledgers independentes autorizando o mesmo gasto. Ligar bridge HMAC e histórico persistente do chat; hoje cada turno recebe apenas o texto atual e não há mídia/analista no sandbox. Provar limites por chamada dentro de loop e conciliação de uso unknown. Não habilitar pagamento antes disso.
 
 PENDENTE I33/R2: ativação/desafio nonce60s uso único, binding HTTP, expediente e grant de remoção de responsável permanecem ausentes. C2 já tem implementação provisória CRM desde I3, sem novo aceite. Schemas aninhados/constraints e matriz RSpec requests/autorização/concorrência ainda incompletos. R3/R5/R6 e ensaio de continuidade anteriores permanecem pendentes. Sem merge/deploy.
+
+## J1 — Regressão completa com PostgreSQL
+
+Data: 13/11/2026. Autor: Theo, CTO · Codex Sol. Status: testado localmente, sem deploy.
+Fonte: entrega `I3-backend-runtime.md` §J1 da frente Evo CRM Agentes.
+
+```sh
+cd /Users/ricardohenrique/Projetos/evo-crm/_evo-i3-runtime/services/vetorial-agente
+POSTGRES_TEST_URL=postgresql+psycopg://postgres@127.0.0.1:55439/vetorial_agent_a12_test PYTHONPATH=. /Users/ricardohenrique/Projetos/evo-crm/_evo-agenda-runtime/services/vetorial-agente/.venv/bin/python -m pytest tests -q
+```
+
+Resultado: **142 passaram, zero ignorados**, incluindo os quatro testes de `tests/test_postgres.py`; um aviso preexistente Starlette/httpx. Modelo por dublê, US$0. Contêineres sintéticos `evo-i3-postgres` e `evo-i3-redis` iniciados; Docker permanece aberto. Este resultado resolve a lacuna de ambiente da I34 e não constitui aceite integrado R1–R8.
