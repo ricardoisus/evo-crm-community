@@ -81,3 +81,24 @@ def test_pg_calendar_serializes_overlapping_bookings_and_replays():
         results = list(pool.map(book, [winner] * 4))
     assert all(r["sucesso"] for r in results)
     assert g.mutated == 1
+
+
+def test_pg_telemetry_duplicate_record_and_persistent_retry():
+    from vetorial_agent.telemetry import Telemetry, ledger, outbox
+    from .test_telemetry import execution
+    from sqlalchemy import select
+    store = setup()
+    event = execution()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda _: Telemetry(store).record(event), range(16)))
+    with store.engine.connect() as connection:
+        assert len(connection.execute(select(ledger).where(ledger.c.event_id == event['event_id'])).all()) == 1
+        assert len(connection.execute(select(outbox).where(outbox.c.event_id == event['event_id'])).all()) == 1
+    # Full-suite DB may contain older pending telemetry; acknowledge all batches safely.
+    telemetry = Telemetry(Store(URL))
+    delivered = []
+    def receive(batch):
+        delivered.extend(item['event_id'] for item in batch)
+        return [item['event_id'] for item in batch]
+    telemetry.flush(receive, now_ms=1000000)
+    assert event['event_id'] in delivered

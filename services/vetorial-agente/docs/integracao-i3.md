@@ -23,3 +23,16 @@ Testes atuais são offline e não autorizam inferência paga.
 - Esses argumentos são pontos de integração testados, **ainda não conectados a `app.build()`**. Não declarar R3 pronto nem promover `control_source` com este código.
 - Falta: factory/HTTP e seleção exclusiva dos modos no boot; parâmetros do store/agenda/mídia e fences completos; importação observada A14 e ensaio integral. O contrato global ainda é carregado no import do módulo para compatibilidade A14; remover essa dependência no boot CRM antes do aceite.
 - Provas sem rede paga: `tests/test_snapshot_model.py` compara chamadas do atendimento (inclusive ferramenta e saída), request do analista e influência de edição do snapshot. O analista usa interrupção após capturar request; não comprova classificação final. `tests/test_snapshot_worker.py` prova suspensão antes de claim, troca de revisão e caminho legado separado por injeção. Não é ensaio HTTP nem prova de produção.
+
+## I32: fundação de telemetria, parcial (12/11/2026)
+
+- `telemetry.py`: ledger e outbox aditivos registrados por `Store.migrate()`; nunca DDL no startup.
+- `Telemetry.record_batch()` grava execução/uso e outbox na mesma transação. IDs UUID; índice único de evento e de assunto por deployment/kind (execution_id/call_id). Colisão recusa substituição; reentrega usa os mesmos bytes lógicos.
+- `flush()` persiste tentativa/backoff antes do transporte e confirma somente IDs reconhecidos. Queda/ACK perdido preserva o lote; reinício recupera. Não há garantia exactly-once HTTP, nem exclusão dos recibos.
+- `HTTPDelivery`: POST HMAC para `/internal/vetorial_agent/telemetry`, envelope `{events:[...]}`, resposta proposta `{acknowledged:[UUID]}`; timeout/HTTP inválido/erro não expõe body nem headers. **Endpoint CRM ainda inexistente; não conectar em produção.**
+- Schema fechado aceita somente IDs/tokens/inteiros/estados fixos. Custo em micro-USD fornecido pelo produtor, `unknown` exige null; não calcula tarifa. Integrações: openai/groq/calendly/google_gateway, somente configured/absent/error/unverified. Não aceita prompt, telefone, texto livre ou credencial.
+- `health()` é função testada para 45/90s e divergência de revisão/hash. Não é ainda status derivado no CRM; heartbeat não é emitido pelo loop.
+- Testes SQLite/HTTP dublê: reinício, backoff, ACK perdido, duplicidade, colisão/rollback de batch, secret em resposta HTTP, saúde e limites de valores. Novo teste PostgreSQL concorrente está condicionado a POSTGRES_TEST_URL e ainda não executado.
+- **PENDENTE R5/R6:** ligar captura por chamada e execução ao adaptador/worker (incluindo falha/unknown), heartbeat15s/ack real, tarifação versionada/áudio, recibos de agenda e envio; implementar ingestão HMAC e dedup CRM, métricas live/test/mês SP/p50/p95, autorização/paginação e probes reais sem gasto. Antes de adotar, fechar schema com produtor/CRM; os eventos terminais imutáveis atuais ainda não modelam conciliação unknown→known. Não liberar I4 com este incremento.
+- C8 já possui índice/resposta24h no CRM desde I3; não foi revalidado em PostgreSQL na I32.
+- Sem merge/deploy, API paga ou efeito externo. Piloto A14 preservado.
