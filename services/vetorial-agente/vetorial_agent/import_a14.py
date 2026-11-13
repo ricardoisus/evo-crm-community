@@ -38,3 +38,36 @@ def candidate(*, deployment_id, bot_id, inbox_id, pipeline_id, allowlist,
                     'agenda_horizon_days': 14, 'slot_validity_ms': 600000, 'max_attempts': 3}
     }
     return {'payload': payload, 'sha256': digest(payload), 'lease_ms': 120000}
+
+
+def import_review(*, expected_binding, expected_sha256=None):
+    """Import versioned A14 manifests into memory; never read secret paths or Swarm.
+
+    Caller must independently confirm the binding. This is a review envelope, not
+    a publication command, and has no database/network side effects.
+    """
+    deploy = Path(__file__).parent.parent / 'deploy'
+    crm = json.loads((deploy / 'crm-production.json').read_bytes())['environment']
+    runtime = json.loads((deploy / 'stack.production.json').read_bytes())['services']['vetorial-agente']['environment']
+    for key in ('VETORIAL_AGENT_INBOX_ID', 'VETORIAL_AGENT_ALLOWLIST',
+                'VETORIAL_AGENT_INTERNAL_NUMBERS', 'VETORIAL_AGENT_ALL_CONTACTS',
+                'VETORIAL_AGENT_ANALYSIS_ALL'):
+        if crm[key] != runtime[key]:
+            raise ValueError('Manifestos A14 divergentes')
+    if runtime['VETORIAL_AGENT_ALL_CONTACTS'] != 'false' or runtime['VETORIAL_AGENT_ANALYSIS_ALL'] != 'false':
+        raise ValueError('A14 deve permanecer piloto')
+    review = candidate(
+        deployment_id='vetorial-a14-review', bot_id=crm['VETORIAL_AGENT_BOT_ID'],
+        inbox_id=crm['VETORIAL_AGENT_INBOX_ID'], pipeline_id=crm['VETORIAL_AGENT_PIPELINE_ID'],
+        allowlist=runtime['VETORIAL_AGENT_ALLOWLIST'].split(','),
+        internal_numbers=runtime['VETORIAL_AGENT_INTERNAL_NUMBERS'].split(','),
+        project_id=runtime['OPENAI_PROJECT'], event_type=runtime['CALENDLY_EVENT_TYPE'],
+        calendar_id='ricardohenrique@agenciavetorial.com')
+    for role, key in (('atendimento', 'OPENAI_MODEL'), ('analista', 'OPENAI_ANALYST_MODEL')):
+        review['payload']['roles'][role]['model'] = runtime[key]
+    review['sha256'] = digest(review['payload'])
+    if review['payload']['binding'] != expected_binding:
+        raise ValueError('Identidade/caixa/pipeline A14 divergente')
+    if expected_sha256 is not None and review['sha256'] != expected_sha256:
+        raise ValueError('Hash A14 divergente')
+    return review

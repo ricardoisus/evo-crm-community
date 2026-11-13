@@ -102,3 +102,12 @@ Fontes: plano §8; I1 §3.3; I2 C3–C5; passagem J2; tests/test_snapshot_compon
 - Testes: comando J1 com POSTGRES_TEST_URL, 159 passaram, zero ignorados; aviso Starlette/httpx preexistente. Dublês, US$0; diff-check aprovado.
 - Limite: teste de componentes sintético. Gateway vivo, revalidação remota de efeitos e ensaio integrado/rollout permanecem nas etapas próprias; não é aceite integral R3.
 - Rota confiável vetorial-calendar-v1 ainda exige resolução e compatibilidade de calendar_id/fence no gateway antes de integração/deploy (pendência J2). Nenhuma alteração no gateway ou produção nesta etapa.
+
+## J5 — revisão A14 em memória e equivalência
+
+- Fonte: manifests versionados `deploy/crm-production.json`, `deploy/stack.production.json` e prompts A14 do serviço. Nenhuma leitura de produção ou dos caminhos de secrets.
+- `import_a14.import_review(expected_binding=..., expected_sha256=...)` monta revisão 1 somente em memória, recusa divergência entre manifests, identidade/caixa/pipeline e hash esperado. Não publica nem ativa.
+- Hash da revisão A14: `bff855d82653f44cbe747fe2e8a4a19520d887563d74e2a40ea5c801224546a9`.
+- `tests/test_a14_equivalence.py`: seis conversas sintéticas (texto, áudio, agenda, pausa, fora da lista e transferência), worker legado versus snapshot CRM, provider e mídia dublês. Compara decisões, requests completos com prompts, ferramentas e comandos de negócio.
+- Metadados de protocolo CRM revision/policy_epoch/sha256 e sufixo hash da chave de cache de mídia são conferidos separadamente do conteúdo de negócio; não existem no protocolo legado. Não se declara igualdade byte a byte desses envelopes.
+- Não comprova publicação Rails, transporte HTTP integrado ou evento real; pertencem ao ensaio posterior. Piloto preservado.
