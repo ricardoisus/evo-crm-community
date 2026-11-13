@@ -7,6 +7,7 @@ import json
 import time
 import re
 from .adapters import validate_action, validate_output
+from .configuration import ConfigurationUnavailable
 
 
 FIRST_BLOCK_TYPING_CAP_SECONDS = 6
@@ -22,7 +23,8 @@ class PendingReceipt(Exception):
 
 class Worker:
     def __init__(
-        self, store, crm, model, calendar, policy, sleep=time.sleep, clock=time.time
+        self, store, crm, model, calendar, policy, sleep=time.sleep, clock=time.time,
+        configuration_cache=None, configure=None
     ):
         self.store, self.crm, self.model, self.calendar, self.policy = (
             store,
@@ -32,8 +34,36 @@ class Worker:
             policy,
         )
         self.sleep, self.clock = sleep, clock
+        self.configuration_cache, self.configure = configuration_cache, configure
+        self.snapshot = None
+
+    def prepare(self):
+        """Pin before claiming work: an unavailable configuration leaves queues untouched.
+
+        configure constructs adapters from the pinned payload, never from legacy env.
+        The snapshot is kept for the entire execution, including all tool calls.
+        """
+        if self.configuration_cache is None:
+            return True  # A14 compatibility path, unchanged.
+        try:
+            snapshot = self.configuration_cache.pin()
+            model, calendar, policy = self.configure(snapshot)
+        except ConfigurationUnavailable:
+            return False
+        self.snapshot = snapshot
+        self.model, self.calendar, self.policy = model, calendar, policy
+        return True
+
+    def check_configuration(self):
+        if self.configuration_cache is None:
+            return
+        current = self.configuration_cache.pin()
+        if self.snapshot is None or current.fence() != self.snapshot.fence():
+            raise Stale()
+
 
     def guard(self, ident, version, analysis=False):
+        self.check_configuration()
         row = self.store.get(ident)
         if row is None or row["version"] != version or (row["paused"] and not analysis):
             raise Stale()
@@ -105,7 +135,8 @@ class Worker:
         return context
 
     def action(self, row, name, args):
-        args = validate_action(name, args)
+        contract = self.snapshot.payload["roles"]["atendimento"]["actions"] if self.snapshot else None
+        args = validate_action(name, args, contract)
         self.guard(row["id"], row["version"])
         if name == "atualizar_negocio":
             digest = hashlib.sha256(
@@ -146,6 +177,8 @@ class Worker:
         return result
 
     def tick(self):
+        if not self.prepare():
+            return False
         row = self.store.claim(self.clock())
         if not row:
             return False
@@ -159,7 +192,9 @@ class Worker:
                 output = self.model.run(
                     self.context(row), lambda n, a: self.action(row, n, a)
                 )
-                validate_output(output)
+                validate_output(output,
+                                self.snapshot.payload["roles"]["atendimento"]["actions"] if self.snapshot else None,
+                                self.snapshot.payload["limits"] if self.snapshot else None)
                 self.guard(ident, version)
                 draft = {
                     "version": version,
@@ -215,6 +250,10 @@ class Worker:
             self.store.finish(
                 ident, version, done=version, lease=0, last_event=self.clock()
             )
+        except ConfigurationUnavailable:
+            # No retries/handoff while control is unavailable. Preserve draft and queue.
+            self.store.finish(ident, version, lease=self.clock() + 2,
+                              attempts=max(0, row["attempts"] - 1))
         except PendingReceipt:
             self.store.finish(
                 ident,
@@ -247,6 +286,8 @@ class Worker:
         return True
 
     def analyse(self):
+        if not self.prepare():
+            return False
         for row in self.store.analyse_due(self.clock()):
             try:
                 analysis = self.model.run(
