@@ -158,7 +158,8 @@ class CRM:
 
 
 class OpenAI:
-    def __init__(self, key, model, project=None, transcription=None, analyst_model=None, snapshot=None):
+    def __init__(self, key, model, project=None, transcription=None, analyst_model=None, snapshot=None, authority=None):
+        self.authority = authority
         self.configuration = copy.deepcopy(snapshot.payload) if snapshot is not None else None
         if self.configuration is not None:
             project = self.configuration["provider"]["project_id"]
@@ -180,6 +181,7 @@ class OpenAI:
         self.usage = []
 
     def post(self, path, **kwargs):
+        fence = self.authority.data() if self.authority else {}
         if path == "/responses":
             kwargs["json"].setdefault("service_tier", "default")
         r = self.http.post(path, **kwargs)
@@ -194,7 +196,8 @@ class OpenAI:
             raise RuntimeError("openai_status_" + str(r.status_code) + suffix)
         d = r.json()
         if "usage" in d:
-            self.usage.append(dict(d["usage"], _endpoint=path, _model=kwargs.get("json", {}).get("model"), _service_tier=d.get("service_tier")))
+            self.usage.append(dict(d["usage"], _endpoint=path, _model=kwargs.get("json", {}).get("model"), _service_tier=d.get("service_tier"),
+                                   **({"_configuration": fence} if fence else {})))
         return d
 
     def run(self, context, act, analyst=False):
@@ -315,14 +318,17 @@ class OpenAI:
         raise RuntimeError("limite_de_ferramentas")
 
     def media(self, mime, data):
+        if self.authority:
+            self.authority.check()
+        runtime = self.configuration["runtime"] if self.configuration else {}
         raw = base64.b64decode(data, validate=True)
-        if len(raw) > 20 * 1024 * 1024:
+        if len(raw) > runtime.get("attachment_bytes", 20 * 1024 * 1024):
             raise ValueError("midia_grande")
         if mime == "application/pdf":
             if not raw.startswith(b"%PDF-"):
                 raise ValueError("pdf_invalido")
             reader = PdfReader(io.BytesIO(raw))
-            if len(reader.pages) > 40 or reader.is_encrypted:
+            if len(reader.pages) > runtime.get("pdf_pages", 40) or reader.is_encrypted:
                 raise ValueError("pdf_limite")
             return "\n".join((p.extract_text() or "") for p in reader.pages)[:40000]
         if mime.startswith("audio/") and mime in (

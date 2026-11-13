@@ -82,3 +82,23 @@ um aviso preexistente Starlette/httpx. Novo teste bloqueia leitura de arquivos,
 altera env, publica revisão sintética e confere HTTP/debounce/fila preservada.
 Não equivale ao aceite integral R3: guards/efeitos, mídia/agenda e ensaio de
 migração continuam nos itens J seguintes. Sem API paga, merge ou produção.
+
+## J3 — policy, store, agenda e mídia sob snapshot
+
+Data: 13/11/2026. Etapa: J3. Autor: Theo, CTO · Codex Sol principal.
+Status: implementado e testado; sem merge, deploy ou evento real.
+Fontes: plano §8; I1 §3.3; I2 C3–C5; passagem J2; tests/test_snapshot_components.py.
+
+- EffectFence é fixado por execução, separado do cache; recusa revisão/hash/epoch divergentes e lease vencida.
+- Política e ingresso usam o mesmo fence, inclusive lista, modos e debounce. Ingresso divergente responde 503 sem ACK.
+- Store verifica fence em ingest/claim/analyse_due/operation. Eventos/operações guardam o fence em JSON existente, sem migração.
+- Worker deriva quotas de mensagens/agenda, tentativas, histórico e mídia do snapshot; rascunhos registram fence.
+- CRM recebe revision/policy_epoch/sha256 em comandos, inclusive leitura de mídia e consulta de recibo de envio.
+- Recibo concluído idêntico pode ser reaproveitado sob revisão atual sem executar de novo; preserva o fence original. Operação pendente com payload/fence diferente recusa colisão.
+- Agenda usa event_type, calendar_id, duração, fuso, horizonte e validade da oferta do snapshot. Ofertas/recibos guardam fence; oferta de outra revisão exige nova consulta.
+- Calendly revalida antes de cada página; gateway Google revalida antes de cada chamada e leva calendar_id/fence no envelope. Cancelamento reautoriza antes de delete.
+- Modelo/mídia e Groq revalidam antes do provedor; bytes/páginas/anexos vêm do snapshot. Usage em memória conserva o fence da chamada aceita, mesmo se a revisão mudar depois.
+- Protocolo Groq continua whisper-large-v3-turbo/pt; não há configuração nova ou fallback de provedor.
+- Testes: comando J1 com POSTGRES_TEST_URL, 159 passaram, zero ignorados; aviso Starlette/httpx preexistente. Dublês, US$0; diff-check aprovado.
+- Limite: teste de componentes sintético. Gateway vivo, revalidação remota de efeitos e ensaio integrado/rollout permanecem nas etapas próprias; não é aceite integral R3.
+- Rota confiável vetorial-calendar-v1 ainda exige resolução e compatibilidade de calendar_id/fence no gateway antes de integração/deploy (pendência J2). Nenhuma alteração no gateway ou produção nesta etapa.

@@ -106,3 +106,18 @@ class ConfigurationCache:
         if self._snapshot is None or self.clock() >= self._snapshot.expires_at:
             raise ConfigurationUnavailable("Configuração indisponível")
         return copy.deepcopy(self._snapshot)
+
+
+class EffectFence:
+    """Execution-scoped authority. Never renew or replace the pinned revision."""
+    def __init__(self, snapshot, cache):
+        self.snapshot = copy.deepcopy(snapshot)
+        self.cache = cache
+
+    def check(self):
+        if self.cache.pin().fence() != self.snapshot.fence():
+            raise ConfigurationUnavailable("Revisão ou epoch divergente")
+        return self.snapshot.fence()
+
+    def data(self):
+        return self.check()

@@ -93,7 +93,7 @@ def build(*, gateway_routes=None):
         return build_legacy()
     if source != "crm":
         raise RuntimeError("Fonte de configuração inválida")
-    from .configuration import ConfigurationCache
+    from .configuration import ConfigurationCache, EffectFence
     database, api_key = secret("DATABASE_URL"), secret("OPENAI_API_KEY")
     if not database.startswith("postgresql") or len(api_key) < 32:
         raise RuntimeError("Secrets obrigatórios ausentes ou banco sem Postgres")
@@ -106,6 +106,7 @@ def build(*, gateway_routes=None):
 
     def configure(snapshot):
         payload = snapshot.payload
+        authority = EffectFence(snapshot, cache)
         try:
             activation = payload["activation"]
             inboxes = payload["binding"]["inbox_ids"]
@@ -120,11 +121,14 @@ def build(*, gateway_routes=None):
                 all_contacts=activation["atendimento"] == "all",
                 attendance_enabled=activation["atendimento"] != "off",
                 analysis_enabled=activation["analista"] != "off",
-                behavior=payload["behavior"],
+                behavior=payload["behavior"], authority=authority,
             )
             model = OpenAI(api_key, None, snapshot=snapshot,
-                           transcription=GroqTranscription(secret("GROQ_API_KEY")))
+                           transcription=GroqTranscription(secret("GROQ_API_KEY"), snapshot=snapshot, authority=authority),
+                           authority=authority)
             integration = payload["integrations"]
+            if integration["availability_provider"] != "calendly":
+                raise ValueError("Disponibilidade inválida")
             if integration["google_gateway_ref"] != "vetorial-calendar-v1":
                 raise ValueError("Gateway inválido")
             def authorize(owner, key):
@@ -133,9 +137,9 @@ def build(*, gateway_routes=None):
                     return False
                 state = crm.request(owner)
                 return not state["paused"] and state["allowed"] and key.startswith(f"{owner}:{state['version']}:agenda:")
-            agenda = Agenda(store, GoogleGateway(gateway_routes.get(integration["google_gateway_ref"], ""), secret("CALENDAR_GATEWAY_SECRET")),
-                            CalendlyAvailability(secret("CALENDLY_TOKEN"), integration["event_type"]),
-                            authorize=authorize)
+            agenda = Agenda(store, GoogleGateway(gateway_routes.get(integration["google_gateway_ref"], ""), secret("CALENDAR_GATEWAY_SECRET"), authority=authority, calendar_id=integration["calendar_id"]),
+                            CalendlyAvailability(secret("CALENDLY_TOKEN"), integration["event_type"], authority=authority),
+                            authorize=authorize, snapshot=snapshot, authority=authority)
             return model, agenda, policy
         except (KeyError, TypeError, ValueError):
             from .configuration import ConfigurationUnavailable
@@ -204,7 +208,11 @@ def create_app(store, policy, bridge_secret, worker=None, *, sandbox=None, autho
                 _, _, current_policy = worker.configure(worker.configuration_cache.pin())
             except ConfigurationUnavailable:
                 return Response(status_code=503)  # Upstream durable outbox retries without ACK.
-        store.ingest(event, current_policy)  # ACK follows commit; duplicate ACK is safe.
+        from .configuration import ConfigurationUnavailable
+        try:
+            store.ingest(event, current_policy)  # ACK follows commit; duplicate ACK is safe.
+        except ConfigurationUnavailable:
+            return Response(status_code=503)
         return Response(status_code=202)
 
     @app.post("/test_sessions/{session_id}/turns")

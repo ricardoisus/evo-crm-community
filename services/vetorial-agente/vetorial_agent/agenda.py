@@ -14,6 +14,7 @@ import httpx
 from sqlalchemy import Table, Column, String, JSON, select
 from .store import meta
 from .calendar import label_br
+from .configuration import ConfigurationUnavailable
 
 locks = Table("calendar_locks", meta, Column("id", String, primary_key=True))
 offers = Table(
@@ -42,10 +43,13 @@ receipts = Table(
 class GoogleGateway:
     """Calls a fixed, private n8n webhook with headerAuth credential. No arbitrary URL from model."""
 
-    def __init__(self, url="", secret=""):
+    def __init__(self, url="", secret="", *, authority=None, calendar_id=None):
+        self.authority, self.calendar_id = authority, calendar_id
         self.url, self.secret = url, secret
 
     def call(self, op, **args):
+        if self.authority:
+            args = dict(args, **self.authority.data(), calendar_id=self.calendar_id)
         if not self.url or len(self.secret) < 32:
             raise RuntimeError("agenda_indisponivel")
         try:
@@ -76,12 +80,15 @@ class CalendlyAvailability:
     BASE = "https://api.calendly.com"
     MAX_RANGE = timedelta(days=7) - timedelta(seconds=1)  # Calendly rejects > 7 days
 
-    def __init__(self, token="", event_type="", get=None, now=None):
+    def __init__(self, token="", event_type="", get=None, now=None, *, authority=None):
+        self.authority = authority
         self.token, self.event_type = token, event_type
         self.get = get or httpx.get
         self.now = now or (lambda: datetime.now(timezone.utc))
 
     def slots(self, lo, hi):
+        if self.authority:
+            self.authority.check()
         if len(self.token) < 20 or not re.fullmatch(
             re.escape(self.BASE) + r"/event_types/[0-9a-f-]{36}", self.event_type
         ):
@@ -90,6 +97,8 @@ class CalendlyAvailability:
         lo = max(lo, self.now() + timedelta(minutes=1))
         found = set()
         while lo < hi:
+            if self.authority:
+                self.authority.check()
             end = min(hi, lo + self.MAX_RANGE)
             try:
                 r = self.get(
@@ -145,7 +154,12 @@ class FixedAvailability:
 
 
 class Agenda:
-    def __init__(self, store, google, availability=None, clock=None, authorize=None):
+    def __init__(self, store, google, availability=None, clock=None, authorize=None, *, snapshot=None, authority=None):
+        self.authority = authority
+        self.configuration = snapshot.payload if snapshot else None
+        self.runtime = self.configuration["runtime"] if snapshot else {}
+        self.minutes = self.configuration["integrations"]["booking_minutes"] if snapshot else 45
+        self.timezone = self.configuration["behavior"]["timezone"] if snapshot else "America/Sao_Paulo"
         self.store, self.google = store, google
         # Calendly in production; FixedAvailability only in tests. None means closed.
         self.availability = availability
@@ -154,7 +168,11 @@ class Agenda:
 
     def call(self, owner, key, name, args):
         payload = dict(owner=owner, name=name, args=args)
+        if self.authority:
+            payload["configuration"] = self.authority.data()
         with self.store.engine.begin() as c:
+            if self.authority:
+                self.authority.check()
             c.execute(
                 self.store.insert(locks)
                 .values(id="google-vetorial")
@@ -183,6 +201,8 @@ class Agenda:
             # Unexpected/timeouts roll back local tx. Stable remote ID + get on retry reconciles.
             try:
                 result = self.execute(c, owner, key, name, args)
+            except ConfigurationUnavailable:
+                raise
             except RuntimeError:
                 return {"sucesso": False, "erro": "agenda_indisponivel", "slots": []}
             c.execute(receipts.insert().values(key=key, payload=payload, result=result))
@@ -194,7 +214,7 @@ class Agenda:
         """Real availability in [lo, hi), at least 2h ahead and within the 14-day window."""
         now = self.clock()
         lo = max(lo, now + timedelta(hours=2))
-        hi = min(hi, now + timedelta(days=15))
+        hi = min(hi, now + timedelta(days=self.runtime.get("agenda_horizon_days", 14) + 1))
         if hi <= lo:
             return []
         return [
@@ -205,7 +225,7 @@ class Agenda:
 
     def period(self, text):
         text = text.lower().strip()
-        tz = ZoneInfo("America/Sao_Paulo")
+        tz = ZoneInfo(self.timezone)
         day = (
             self.clock()
             .astimezone(tz)
@@ -230,7 +250,7 @@ class Agenda:
             "14 dias",
             "próximas duas semanas",
         ):
-            return day, day + timedelta(days=15)
+            return day, day + timedelta(days=self.runtime.get("agenda_horizon_days", 14) + 1)
         dates = re.findall(r"\d{4}-\d{2}-\d{2}", text)
         if len(dates) in (1, 2):
             try:
@@ -245,7 +265,7 @@ class Agenda:
 
     def free(self, slot, exclude=None):
         start = datetime.fromisoformat(slot.replace("Z", "+00:00"))
-        end = start + timedelta(minutes=45)
+        end = start + timedelta(minutes=self.minutes)
         # For a reschedule use event listing to exclude ONLY the owned event.
         if exclude:
             d = self.google.call("list", timeMin=self.iso(start), timeMax=self.iso(end))
@@ -282,8 +302,10 @@ class Agenda:
             # Calendly already excludes Ricardo's busy time; Google is rechecked on booking.
             available = self.candidates(*bounds)[:8]
             data = dict(
-                slots=available, expires=(now + timedelta(minutes=10)).timestamp()
+                slots=available, expires=(now + timedelta(milliseconds=self.runtime.get("slot_validity_ms", 600000))).timestamp()
             )
+            if self.authority:
+                data["configuration"] = self.authority.data()
             c.execute(
                 self.store.insert(offers)
                 .values(owner=owner, data=data)
@@ -295,7 +317,7 @@ class Agenda:
                         "inicio": s,
                         "fim": self.iso(
                             datetime.fromisoformat(s.replace("Z", "+00:00"))
-                            + timedelta(minutes=45)
+                            + timedelta(minutes=self.minutes)
                         ),
                         "label_br": label_br(s),
                     }
@@ -327,6 +349,8 @@ class Agenda:
         if name in ("remarcar", "cancelar") and not remote and not owned:
             return {"sucesso": False, "erro": "reuniao_nao_localizada_nesta_conversa"}
         if name == "cancelar":
+            if not self.authorize(owner, key):
+                return {"sucesso": False, "erro": "estado_ou_politica"}
             if remote and remote.get("status") != "cancelled":
                 self.google.call("delete", id=ident)
             c.execute(
@@ -350,11 +374,12 @@ class Agenda:
         if name == "agendar" and remote and remote.get("status") != "cancelled":
             return {"sucesso": False, "erro": "reuniao_existente_use_remarcar"}
         offer = c.execute(select(offers.c.data).where(offers.c.owner == owner)).scalar()
-        if not offer or offer["expires"] < now.timestamp() or slot not in offer["slots"]:
+        if (not offer or offer["expires"] < now.timestamp() or slot not in offer["slots"]
+                or (self.authority and offer.get("configuration") != self.authority.data())):
             return {"sucesso": False, "erro": "consultar_horarios_antes"}
         start = datetime.fromisoformat(slot.replace("Z", "+00:00"))
         # Recheck both sources: Calendly (hours + its conflicts) and the target Google calendar.
-        if slot not in self.candidates(start, start + timedelta(minutes=45)):
+        if slot not in self.candidates(start, start + timedelta(minutes=self.minutes)):
             return {"sucesso": False, "erro": "horário indisponível"}
         if not self.free(slot, ident if name == "remarcar" else None):
             return {"sucesso": False, "erro": "horário indisponível"}
@@ -363,10 +388,10 @@ class Agenda:
         body = {
             "status": "confirmed",
             "summary": "Diagnóstico Vetorial",
-            "start": {"dateTime": slot, "timeZone": "America/Sao_Paulo"},
+            "start": {"dateTime": slot, "timeZone": self.timezone},
             "end": {
-                "dateTime": self.iso(start + timedelta(minutes=45)),
-                "timeZone": "America/Sao_Paulo",
+                "dateTime": self.iso(start + timedelta(minutes=self.minutes)),
+                "timeZone": self.timezone,
             },
             "attendees": [{"email": email}],
             "extendedProperties": {"private": {"owner": owner}},

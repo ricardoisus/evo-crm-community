@@ -15,7 +15,13 @@ class Policy:
     analysis_enabled: bool = True
     behavior: dict = field(default_factory=dict)
 
+    authority: object = field(default=None, compare=False, repr=False)
+
+    def check(self):
+        return self.authority.check() if self.authority else {}
+
     def allows(self, phone):
+        self.check()
         return bool(
             self.attendance_enabled and self.inbox_id
             and re.fullmatch(r"\+[1-9]\d{6,14}", phone or "")
@@ -24,6 +30,7 @@ class Policy:
         )
 
     def allows_analysis(self, phone):
+        self.check()
         return bool(
             self.analysis_enabled and self.inbox_id
             and re.fullmatch(r"\+[1-9]\d{6,14}", phone or "")

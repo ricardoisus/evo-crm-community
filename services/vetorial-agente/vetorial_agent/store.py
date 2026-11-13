@@ -79,8 +79,11 @@ class Store:
         )
 
     def ingest(self, event, policy, now=None):
+        fence = policy.check()
+        event = dict(event, configuration=fence) if fence else event
         now = time.time() if now is None else now
         with self.engine.begin() as c:
+            policy.check()
             inserted = c.execute(
                 self.insert(events)
                 .values(
@@ -175,7 +178,9 @@ class Store:
                 .values(**values)
             )
 
-    def claim(self, now=None):
+    def claim(self, now=None, *, authority=None):
+        if authority:
+            authority.check()
         now = time.time() if now is None else now
         with self.engine.begin() as c:
             row = (
@@ -203,7 +208,9 @@ class Store:
                 )
                 return dict(row, attempts=row["attempts"] + 1)
 
-    def analyse_due(self, now=None, silence=300):
+    def analyse_due(self, now=None, silence=300, *, max_attempts=3, authority=None):
+        if authority:
+            authority.check()
         now = time.time() if now is None else now
         with self.engine.begin() as c:
             row = (
@@ -213,7 +220,7 @@ class Store:
                         and_(
                             conversations.c.analysed < conversations.c.version,
                             conversations.c.analysis_lease < now,
-                            conversations.c.analysis_attempts < 3,
+                            conversations.c.analysis_attempts < max_attempts,
                             conversations.c.last_event <= now - silence,
                         )
                     )
@@ -235,9 +242,13 @@ class Store:
             )
             return [dict(row)]
 
-    def operation(self, key, conversation_id, kind, payload, invoke, now=None):
+    def operation(self, key, conversation_id, kind, payload, invoke, now=None, authority=None):
         """Stable keys are passed through to BOTH CRM and calendar. Their receipts close the crash gap."""
+        if authority:
+            payload = dict(payload, configuration=authority.data())
         with self.engine.begin() as c:
+            if authority:
+                authority.check()
             c.execute(
                 self.insert(operations)
                 .values(
@@ -254,10 +265,20 @@ class Store:
                 .mappings()
                 .one()
             )
-            if row["conversation_id"] != conversation_id or row["payload"] != payload:
+            if row["conversation_id"] != conversation_id:
                 raise ValueError("idempotency_collision")
+            if row["payload"] != payload:
+                # A completed receipt belongs to its original revision. Reuse only
+                # an identical logical effect; never invoke it under a new fence.
+                def logical(data):
+                    return {k: v for k, v in data.items()
+                            if k not in ("configuration", "revision", "policy_epoch", "sha256")}
+                if row["result"] is None or logical(row["payload"]) != logical(payload):
+                    raise ValueError("idempotency_collision")
             if row["result"] is not None:
                 return row["result"]
+        if authority:
+            authority.check()
         result = invoke(
             key
         )  # Remote must dedup key atomically; retry after timeout uses same key.
