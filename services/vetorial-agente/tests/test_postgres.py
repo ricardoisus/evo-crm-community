@@ -138,3 +138,32 @@ def test_pg_sandbox_budget_serializes_sessions_and_preserves_unknown():
     with store.engine.connect() as connection:
         assert connection.execute(select(sessions.c.spent_reserved).where(sessions.c.id == sid)).scalar_one() == 60000
         assert len(connection.execute(select(calls).where(calls.c.session_id == sid)).all()) == 1
+
+
+def test_pg_sandbox_two_sessions_share_one_operator_envelope():
+    from vetorial_agent.sandbox import SandboxBudget, SandboxLimit, scopes, sessions
+    from sqlalchemy import select
+    from datetime import timedelta
+    store = setup()
+    # Unique synthetic day isolates the front envelope without deleting other tests.
+    day = datetime(2040, 1, 1, tzinfo=timezone.utc) + timedelta(days=uuid.uuid4().int % 100000)
+    now = int(day.timestamp() * 1000)
+    budget = SandboxBudget(store, clock=lambda: now)
+    actor = str(uuid.uuid4())
+    def attempt(_):
+        try:
+            return budget.create(actor_id=actor, deployment_id='synthetic', revision=1,
+                purpose='Concorrência', criteria='Teto único', sample_count=3, ceiling=300000)
+        except SandboxLimit:
+            return None
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(attempt, range(2)))
+    accepted = [s for s in results if s]
+    assert len(accepted) == 1
+    # Restart and a second session cannot reset the operator envelope.
+    with pytest.raises(SandboxLimit):
+        SandboxBudget(Store(URL), clock=lambda: now).create(actor_id=actor,
+            deployment_id='another', revision=1, purpose='Teste', criteria='Teto único',
+            sample_count=3, ceiling=300000)
+    with store.engine.connect() as c:
+        assert c.execute(select(sessions.c.ceiling).where(sessions.c.id == accepted[0])).scalar_one() == 300000

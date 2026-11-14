@@ -54,7 +54,7 @@ class SandboxBudget:
         self.clock = clock or (lambda: int(time.time() * 1000))
 
     def create(self, *, actor_id, deployment_id, revision, purpose, criteria, sample_count,
-               ceiling=50000, max_turns=5):
+               ceiling=50000, max_turns=5, session_id=None, snapshot=None, role="atendimento"):
         # Identity/revision come from an authorized CRM session, never browser claims.
         for value in (actor_id, deployment_id, purpose, criteria):
             if not isinstance(value, str) or not 1 <= len(value.strip()) <= 1000:
@@ -66,13 +66,28 @@ class SandboxBudget:
         amount(max_turns, 20)
         now = self.clock()
         day = day_at(now)
-        sid = str(uuid.uuid4())
+        sid = session_id or str(uuid.uuid4())
+        if str(uuid.UUID(sid)) != sid:
+            raise ValueError('invalid_session')
+        plan = {'purpose': purpose, 'criteria': criteria, 'sample_count': sample_count}
+        if snapshot is not None:
+            from .configuration import validate
+            validate(snapshot)
+            if role not in {'atendimento', 'analista'} or snapshot['deployment_id'] != deployment_id or snapshot['revision'] != revision:
+                raise ValueError('invalid_snapshot')
+            plan.update(snapshot=copy.deepcopy(snapshot), role=role)
         # Fixed server-generated grouping: no caller-supplied test_run_id escapes cap.
         envelopes = [(json.dumps(['vetorial', day]), 1000000),
                      (json.dumps(['vetorial', day, actor_id]), 500000)]
         with self.store.engine.begin() as c:
             for key, cap in envelopes:
                 c.execute(self.store.insert(scopes).values(id=key, allocated=0).on_conflict_do_nothing())
+                c.execute(scopes.update().where(scopes.c.id == key).values(allocated=scopes.c.allocated))
+                old = c.execute(select(sessions).where(sessions.c.id == sid)).mappings().one_or_none()
+                if old:
+                    if (old['actor_id'], old['deployment_id'], old['revision'], old['ceiling'], old['max_turns'], {k: v for k, v in old['plan'].items() if k not in {'history', 'pending_text'}}) != (actor_id, deployment_id, revision, ceiling, max_turns, plan):
+                        raise SandboxDenied('Sessão conflitante')
+                    return sid
                 changed = c.execute(scopes.update().where(scopes.c.id == key,
                     scopes.c.allocated <= cap - ceiling).values(allocated=scopes.c.allocated + ceiling))
                 if changed.rowcount != 1:
@@ -80,7 +95,7 @@ class SandboxBudget:
             c.execute(sessions.insert().values(id=sid, actor_id=actor_id, deployment_id=deployment_id,
                 revision=revision, day=day, expires_ms=now + 1800000, ceiling=ceiling,
                 spent_reserved=0, turns=0, max_turns=max_turns, closed=0,
-                plan={'purpose': purpose, 'criteria': criteria, 'sample_count': sample_count}))
+                plan=plan))
         return sid
 
     def _session(self, c, sid, actor_id):
@@ -120,7 +135,8 @@ class SandboxBudget:
             if pending:
                 raise SandboxLimit('Teste pendente de conciliação')
             c.execute(sessions.update().where(sessions.c.id == sid).values(
-                spent_reserved=session['spent_reserved'] + upper_bound, turns=session['turns'] + 1))
+                spent_reserved=session['spent_reserved'] + upper_bound, turns=session['turns'] + 1,
+                plan=dict(session['plan'], pending_text=text)))
             c.execute(calls.insert().values(id=request_id, session_id=sid,
                 request_sha256=fingerprint, reserved=upper_bound, state='unknown'))
             return session, None, True
@@ -141,8 +157,14 @@ class SandboxBudget:
                 # Persist closure even though the caller receives a safe exception.
                 c.execute(sessions.update().where(sessions.c.id == sid).values(closed=1))
             else:
+                session = dict(c.execute(select(sessions).where(sessions.c.id == sid)).mappings().one())
+                plan = copy.deepcopy(session['plan'])
+                if 'pending_text' in plan:
+                    history = plan.setdefault('history', [])
+                    history.extend([{'role': 'user', 'content': plan.pop('pending_text')},
+                                    {'role': 'assistant', 'content': json.dumps(result, ensure_ascii=False)}])
                 c.execute(sessions.update().where(sessions.c.id == sid).values(
-                    spent_reserved=sessions.c.spent_reserved - call['reserved'] + actual))
+                    spent_reserved=sessions.c.spent_reserved - call['reserved'] + actual, plan=plan))
                 c.execute(calls.update().where(calls.c.id == request_id).values(
                     state='completed', actual=actual, result=copy.deepcopy(result)))
                 return
@@ -210,8 +232,15 @@ class Sandbox:
             return result
         adapters = SandboxAdapters()
         try:
-            model = self.model_factory(session['deployment_id'], session['revision'])
-            result = model.run({'messages': [{'role': 'user', 'content': text}]}, adapters.call)
+            model = (self.model_factory.for_session(session) if hasattr(self.model_factory, 'for_session')
+                     else self.model_factory(session['deployment_id'], session['revision']))
+            context = {'messages': session['plan'].get('history', []) + [{'role': 'user', 'content': text}]}
+            if len(json.dumps(context, ensure_ascii=True).encode()) > 131072:
+                raise SandboxLimit('Contexto do teste excede o limite')
+            if session['plan'].get('role') == 'analista':
+                result = model.run(context, adapters.call, analyst=True)
+            else:
+                result = model.run(context, adapters.call)
             actual = self.usage(model)
             self.budget.settle(sid, request_id, result, actual)
             # Structured output is returned; no send or live effect is available.

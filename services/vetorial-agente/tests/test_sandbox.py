@@ -160,7 +160,7 @@ def test_tools_have_no_live_dependencies_or_live_quota(tmp_path, monkeypatch):
         assert not c.execute(select(operations)).all()
 
 
-def test_http_hmac_closed_schema_authorization_and_disabled_default(tmp_path):
+def test_http_hmac_closed_schema_authorization_and_missing_snapshot(tmp_path):
     store, budget = make(tmp_path)
     sid, seen = create(budget), []
     runner = Sandbox(budget, lambda d, r: SimpleNamespace(run=lambda *a: seen.append((d, r)) or {}),
@@ -181,7 +181,8 @@ def test_http_hmac_closed_schema_authorization_and_disabled_default(tmp_path):
                                    sandbox=runner, authorize_test=lambda s: None))
     assert blocked.post(path, content=body, headers=signed(body, SECRET, path=path)).status_code == 403
     disabled = TestClient(create_app(store, Policy('synthetic', frozenset()), SECRET))
-    assert disabled.post(path, content=body, headers=signed(body, SECRET, path=path)).status_code == 503
+    # Default bridge supports only sessions carrying a pinned snapshot.
+    assert disabled.post(path, content=body, headers=signed(body, SECRET, path=path)).status_code == 429
     assert len(seen) == 1
 
 

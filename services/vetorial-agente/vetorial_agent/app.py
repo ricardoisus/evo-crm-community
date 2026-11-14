@@ -250,6 +250,37 @@ def create_app(store, policy, bridge_secret, worker=None, *, sandbox=None, autho
             return Response(status_code=503)
         return Response(status_code=202)
 
+    # Reuse the durable runtime ledger; the CRM stores only authorization/history.
+    from .sandbox_bridge import BridgeSandbox
+    bridge_sandbox = BridgeSandbox(store)
+    if sandbox is None and authorize_test is None:
+        sandbox = bridge_sandbox
+        authorize_test = lambda sid: bridge_sandbox.session(sid)['actor_id']
+
+    @app.post("/test_sessions/manage")
+    async def test_manage(request: Request):
+        from .sandbox import SandboxDenied, SandboxLimit
+        body = b""
+        async for chunk in request.stream():
+            body += chunk
+            if len(body) > 524288:
+                return Response(status_code=413)
+        if not verify(body, request.headers, bridge_secret, path=request.url.path):
+            return Response(status_code=401)
+        try:
+            import json
+            data = json.loads(body)
+            if not isinstance(data, dict):
+                raise ValueError()
+            result = await asyncio.to_thread(bridge_sandbox.manage, data)
+            return {"success": True, "data": result}
+        except SandboxDenied:
+            return Response(status_code=403)
+        except SandboxLimit:
+            return Response(status_code=429)
+        except (ValueError, TypeError, KeyError):
+            return Response(status_code=422)
+
     @app.post("/test_sessions/{session_id}/turns")
     async def test_turn(session_id: str, request: Request):
         from uuid import UUID

@@ -165,3 +165,9 @@ confirm booleano. Aceite exclusivamente sintético; nenhum modo real foi alterad
 Contrato e validações do expediente/binding/grant de responsável estão em
 `_evo-i3-crm/docs/vetorial-integration-i3.md`, seção J9. Nenhum código executável do
 runtime muda nesta etapa. Regressão completa com provedores dublês: 183 testes verdes.
+
+## J10 — ponte de teste e autoridade única
+
+CRM guarda owner/profile/revision/hash/plano/transcrição; nenhum ledger financeiro novo. POST HMAC `/test_sessions/manage` aceita create/show/close de esquema fechado; create fixa snapshot completo e papel, teto/amostra/turnos e UUID de sessão idempotente. `/test_sessions/:uuid/turns` usa apenas request_id UUID e texto; identidade vem da sessão autorizada por CRM e persistida no runtime. Orçamento é exclusivamente SandboxBudget, com escopos fixos frente/dia e operador/dia, tetos conservadores sem reembolso ao fechar, reserva durável por chamada e unknown após crash/erro.
+
+`BridgeSandbox` é ligado por padrão ao app e só oferece simulação offline. `SimulationModel` reutiliza OpenAI.run para prompt/modelo/schema de ambos os papéis; substitui post sem possuir cliente HTTP, chave, mídia ou telemetria live. FakeCRM/FakeAgenda/NoopTransport continuam isolados. A estimativa reserva o contexto máximo suportado (262144 bytes/tokens conservadores incluindo snapshot/schemas e escaping), saída máxima configurada e tarifa versionada; o dublê completa uma rodada sem chamadas de ferramentas. Não é estimador para provedor pago: esse modo não existe nesta ponte. Configuração/tarifa/contexto sem limite confiável → 429 antes do modelo. Uso confirmado do dublê é zero; erro conserva unknown. Histórico de turnos completados persiste no plano, replay não repete modelo, nova tentativa unknown não solta reserva. Testes patcham transporte/provedor live, CRM, agenda e quota para falhar se alcançados, além de concorrência PostgreSQL e ensaio Rails→HTTP HMAC→runtime sintético.
