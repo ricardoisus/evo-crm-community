@@ -1,3 +1,5 @@
+> Estado vigente J12: backend aceito localmente para I4; PR rascunho, sem deploy. As pendências históricas abaixo são substituídas pelo aceite J12 ao final.
+
 # I3: contrato de configuração isolado
 
 Data: 12/11/2026. Etapa: I3. Autor: Theo, CTO · Codex Sol.
@@ -177,3 +179,42 @@ CRM guarda owner/profile/revision/hash/plano/transcrição; nenhum ledger financ
 `vetorial_agent/snapshot.schema.json` é a cópia técnica byte a byte de `config/vetorial_snapshot.schema.json` no CRM I3, incluída no pacote Python para validação independente sem rede. Atualizar os dois arquivos juntos; a origem canônica é o CRM. O schema fecha blocos e tipos/enum/limites, inclusive a linguagem de ações/JSON Schema e referências exclusivamente locais. Campos opcionais ausentes preservam os defaults versionados; os payloads A14 completos continuam aceitos. Configuração inválida não renova lease; a política de lease de 120s permanece.
 
 `tests/test_snapshot_contract.py` cobre campos desconhecidos/secret, tipos/tetos, referências remotas, contrato original A14, lista piloto e expediente sobreposto. A fixture de agenda usa 45min, igual ao contrato fixo do CRM; 30min é explicitamente recusado. Matriz de autorização/request/concorrência HTTP documentada em `docs/vetorial-integration-i3.md` no CRM; orçamento e deduplicação do sandbox continuam sob a autoridade runtime existente. Sem inferência paga.
+
+
+## J12 — synthetic integrated acceptance and legacy adoption
+
+Companion: `tests/rehearse_backend.py`, invoked by CRM
+`spec/integration/vetorial_backend_rehearsal_spec.rb`. Uses real local HTTP/HMAC,
+FastAPI ingress, PostgreSQL and a private Redis/Sidekiq queue. Model requests pass
+through the actual OpenAI adapter with an offline HTTP double; WhatsApp typing/send
+are doubles in Rails. The script has no control routes in the deployed application.
+See CRM `docs/vetorial-integration-i3.md` §J12 and the original front delivery §J12
+for commands, full acceptance matrix and rollback measurement.
+
+`legacy_adoption.adopt_legacy_draft` is an explicit operator operation, never boot
+fallback. Before calling it, drain all old runtime workers and retain their original
+observed effective payload plus canonical hash. Compare that complete reviewed payload
+to `cache.pin()` (only revision/epoch may differ; deployment/binding must match).
+For each pending conversation, call:
+
+```python
+from vetorial_agent.legacy_adoption import adopt_legacy_draft
+adopt_legacy_draft(store, conversation_id,
+    observed_payload=reviewed_a14_payload,
+    observed_sha256=reviewed_a14_hash,
+    snapshot=cache.pin())
+```
+
+The locked operation refuses active execution/analysis leases, changed behavior,
+wrong hash/version, an already managed draft from another revision and unresolved
+local effects. It only adds the target fence to the existing legacy draft; it never
+clears claims, pauses, queues, operations, receipts, unknown effects or attempts.
+Already adopted identical drafts are no-ops. Reconcile sending/uncertain effects
+before adoption, using CRM receipts; never mark them pending. Preserve original
+observed files outside the runtime; do not read behavior env as startup fallback.
+
+The start-first rehearsal leaves the old claim active while the new worker attempts
+claim, then releases it gracefully, adopts the draft and resumes with zero additional
+inference/send. Rollback keeps the adopted draft compatible with the legacy worker
+(which ignores the added fence). Production I7 must still collect actual old/new
+inventories and effective configuration; the synthetic fixture is not that evidence.
