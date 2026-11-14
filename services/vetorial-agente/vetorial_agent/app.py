@@ -148,12 +148,16 @@ def build(*, gateway_routes=None):
     from .telemetry import Telemetry
     worker = Worker(store, crm, None, None, None, configuration_cache=cache, configure=configure, telemetry=Telemetry(store))
     from .telemetry import TelemetryPump, HTTPDelivery
-    worker.telemetry_pump = TelemetryPump(worker, HTTPDelivery(os.environ["CRM_URL"], bridge_secret),
-        {name: "configured" if present else "absent" for name, present in {
-            "openai": bool(api_key), "groq": bool(secret("GROQ_API_KEY")),
-            "calendly": bool(secret("CALENDLY_TOKEN")),
-            "google_gateway": bool(gateway_routes and secret("CALENDAR_GATEWAY_SECRET")),
-        }.items()})
+    from .integrations import runtime_probes
+    def gateway_probe_context():
+        snapshot = cache.pin()
+        return dict(EffectFence(snapshot, cache).data(), calendar_id=snapshot.payload["integrations"]["calendar_id"])
+
+    worker.integration_probes = runtime_probes(api_key, secret("GROQ_API_KEY"), secret("CALENDLY_TOKEN"),
+        gateway_routes.get("vetorial-calendar-v1", ""), secret("CALENDAR_GATEWAY_SECRET"),
+        os.environ["CRM_URL"], bridge_secret, os.environ["VETORIAL_AGENT_DEPLOYMENT_ID"],
+        gateway_context=gateway_probe_context)
+    worker.telemetry_pump = TelemetryPump(worker, HTTPDelivery(os.environ["CRM_URL"], bridge_secret), worker.integration_probes)
     worker.prepare()  # An unavailable CRM does not prevent HTTP boot or consume queues.
     return store, None, bridge_secret, worker
 
@@ -195,6 +199,14 @@ def create_app(store, policy, bridge_secret, worker=None, *, sandbox=None, autho
                 pass
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.get("/integrations")
+    def integrations(request: Request):
+        if not verify(b"", request.headers, bridge_secret, method="GET", path="/integrations"):
+            return Response(status_code=401)
+        from .integrations import NAMES
+        probes = getattr(worker, "integration_probes", None)
+        return {"data": probes() if probes else {name: "absent" for name in NAMES}}
 
     @app.get("/ready")
     def ready():

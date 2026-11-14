@@ -128,3 +128,30 @@ retry with persisted backoff; the CRM deduplicates. Only an applied, unexpired s
 can be acknowledged. No valid configuration means no heartbeat claiming health.
 The CRM ignores older heartbeats for the same instance and derives health at 45/90s,
 checking revision, epoch and hash against the published configuration.
+
+## J8 — probes e tarifa de referência
+
+- `GET /integrations` exige HMAC de GET/path/corpo vazio. Retorna somente os cinco
+  estados `configured|absent|error`; o mesmo resultado segue no heartbeat durável.
+- Probes com cache monotônico de 60s, timeout de 3s e redirects desabilitados:
+  OpenAI/Groq `GET /models`, Calendly `GET /users/me`; Google/n8n usa o contrato já
+  existente `POST` com operação fixa de **leitura** `list`, intervalo de um minuto,
+  calendar_id e fence do snapshot válido; nunca insert/patch/delete. Evolution usa
+  a ponte privada CRM, que só consulta a instância já anexada. Configuração ausente
+  resulta em absent; falha HTTP, timeout, fence ou autenticação em error. Configured
+  indica sucesso da leitura, não prova de permissão de inferência/envio/criação.
+- Corpos/headers/erros remotos são descartados; somente estados cruzam a API. Testes
+  usam exclusivamente MockTransport e dados sintéticos. O sweep autouse verifica
+  todas as respostas HTTP do runtime durante a suíte, inclusive erros, com canários
+  de segredo/token/telefone/URL e padrões de token e telefone E.164; testes negativos
+  provam que o detector rejeita vazamento.
+- `vetorial_agent/pricing.json`, versão `2026-11-13.v1`, registra data, unidade,
+  provider/model/tier/contexto e referências oficiais consultadas em 13/11/2026:
+  [OpenAI API pricing](https://developers.openai.com/api/docs/pricing) (standard,
+  contexto curto, input/cached/output) e [Groq Speech to Text](https://console.groq.com/docs/speech-to-text)
+  (Whisper Turbo, USD/hora e mínimo faturável de 10s). Micro-USD inteiros.
+  O catálogo acompanha o pacote instalado. Não estima tiers/contextos/cache writes
+  não medidos e não transforma ausência de usage em zero. Novas chamadas carregam
+  pricing_version; custo segue unknown/null, preservado por reinício/retry, para
+  conciliação posterior com evidência completa e versão histórica. Nenhuma chamada
+  paga é habilitada por este catálogo ou endpoint.

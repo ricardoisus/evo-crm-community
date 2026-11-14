@@ -57,10 +57,13 @@ def sanitize(event):
         "usage": {"call_id", "execution_id", "source", "provider", "model", "input_tokens", "cached_tokens", "output_tokens", "reasoning_tokens", "cost_micro_usd", "usage_state"},
         "heartbeat": {"instance_id", "revision", "policy_epoch", "sha256", "integrations"},
     }
+    optional = {"pricing_version"} if event.get("kind") == "usage" else set()
     kind = event.get("kind")
-    if kind not in fields or set(event) != common | fields[kind]:
+    if kind not in fields or set(event) - optional != common | fields[kind]:
         raise ValueError("invalid_schema")
     result = copy.deepcopy(event)
+    if "pricing_version" in result:
+        choice(result["pricing_version"], ("2026-11-13.v1",))
     for key in ("event_id", "deployment_id", "execution_id", "call_id", "instance_id", "conversation_id"):
         if key in result:
             identifier(result[key])
@@ -89,7 +92,7 @@ def sanitize(event):
         if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
             raise ValueError("invalid_digest")
         integrations = result["integrations"]
-        if not isinstance(integrations, dict) or set(integrations) != {"openai", "groq", "calendly", "google_gateway"}:
+        if not isinstance(integrations, dict) or set(integrations) not in ({"openai", "groq", "calendly", "google_gateway"}, {"openai", "groq", "calendly", "google_gateway", "evolution"}):
             raise ValueError("invalid_integrations")
         for status in integrations.values():
             choice(status, ("configured", "absent", "error", "unverified"))
@@ -224,7 +227,8 @@ class Execution:
                     kind=kind, occurred_ms=int(self.clock() * 1000), **fields)
 
     def usage(self, call_id, provider, model, usage):
-        # J7 connects measurement without inventing a tariff or zero cost.
+        from .pricing import VERSION
+        # A reference tariff is not sufficient evidence to settle a provider call.
         # Unpriced calls (including failed/ambiguous calls) remain unknown.
         def count(name, details=None):
             value = usage.get(name, 0) if details is None else (usage.get(details) or {}).get(name, 0)
@@ -233,7 +237,7 @@ class Execution:
             source="live", provider=provider, model=model,
             input_tokens=count("input_tokens"), cached_tokens=count("cached_tokens", "input_tokens_details"),
             output_tokens=count("output_tokens"), reasoning_tokens=count("reasoning_tokens", "output_tokens_details"),
-            cost_micro_usd=None, usage_state="unknown"))
+            cost_micro_usd=None, usage_state="unknown", pricing_version=VERSION))
 
     def finish(self, status):
         _execution.reset(self.token)
@@ -266,6 +270,6 @@ class TelemetryPump:
             if snapshot is not None:
                 self.worker.telemetry.record(dict(event_id=str(uuid.uuid4()),
                     deployment_id=snapshot.payload["deployment_id"], kind="heartbeat", occurred_ms=int(now * 1000),
-                    instance_id=self.instance_id, **snapshot.fence(), integrations=self.integrations))
+                    instance_id=self.instance_id, **snapshot.fence(), integrations=self.integrations() if callable(self.integrations) else self.integrations))
                 self.next_heartbeat = now + 15
         return self.worker.telemetry.flush(self.deliver, now_ms=int(now * 1000))
