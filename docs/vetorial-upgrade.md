@@ -272,3 +272,13 @@ a configuração global. Usar secret vetorial_agent_database_url_a14_v2, target
 vetorial_agent_database_url. A senha antiga fica inválida; role DDL já não tem LOGIN
 nem senha. Preservar auditoria; não apagar logs do servidor. Conferir saúde após
 rollout e registrar verificação sem expor valores. Imagens e modelo não mudam.
+
+## Integração de agentes — I7, 2026-11-14
+
+Implantada pelo Portainer; piloto intacto (`+5521973801603`), nenhuma mensagem enviada.
+
+- CRM/Sidekiq 77/78: `ghcr.io/ricardoisus/evo-ai-crm-community:vetorial-ca2e52f@sha256:aa0bc474917ac1d7e43df0155227c3e90cb03057df6439cec8386d456daf7e8c`.
+- Frontend 83: `ghcr.io/ricardoisus/evo-ai-frontend-community:vetorial-a006b8c@sha256:18927b64d36ef2ce12753125c6485a3911da8e7394baa1fed94f02eb48af1db2` (Actions `publish-vetorial`).
+- Runtime 102: `ghcr.io/ricardoisus/evo-crm-community/vetorial-agente:vetorial-d792169@sha256:7393864a4d9ad5de2289d707dc00b26caf2b725be162d16c874909543a8a916f`, `VETORIAL_AGENT_CONTROL_SOURCE=crm`, `VETORIAL_AGENT_DEPLOYMENT_ID=c833b55a-e7b4-4d23-8b14-d57c902c24bf`.
+- CRM e runtime gerados fora do Actions (amd64, provenance/SBOM). Migrações aditivas CRM até `20261113130000`; banco `vetorial_agente` com 12 tabelas.
+- Backup: manager01 `/root/evo_crm/backups/integracao-i7-20261114`. Reversão: digests A14 acima nesta página (CRM `vetorial-7d55b91`, runtime `vetorial-b848276`, frontend `vetorial-783a951`) e passo a passo no runbook da frente Evo CRM Agentes.
