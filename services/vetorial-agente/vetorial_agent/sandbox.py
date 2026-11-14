@@ -80,14 +80,14 @@ class SandboxBudget:
         envelopes = [(json.dumps(['vetorial', day]), 1000000),
                      (json.dumps(['vetorial', day, actor_id]), 500000)]
         with self.store.engine.begin() as c:
+            old = c.execute(select(sessions).where(sessions.c.id == sid)).mappings().one_or_none()
+            if old:
+                if (old['actor_id'], old['deployment_id'], old['revision'], old['ceiling'], old['max_turns'], {k: v for k, v in old['plan'].items() if k not in {'history', 'pending_text'}}) != (actor_id, deployment_id, revision, ceiling, max_turns, plan):
+                    raise SandboxDenied('Sessão conflitante')
+                return sid
             for key, cap in envelopes:
                 c.execute(self.store.insert(scopes).values(id=key, allocated=0).on_conflict_do_nothing())
                 c.execute(scopes.update().where(scopes.c.id == key).values(allocated=scopes.c.allocated))
-                old = c.execute(select(sessions).where(sessions.c.id == sid)).mappings().one_or_none()
-                if old:
-                    if (old['actor_id'], old['deployment_id'], old['revision'], old['ceiling'], old['max_turns'], {k: v for k, v in old['plan'].items() if k not in {'history', 'pending_text'}}) != (actor_id, deployment_id, revision, ceiling, max_turns, plan):
-                        raise SandboxDenied('Sessão conflitante')
-                    return sid
                 changed = c.execute(scopes.update().where(scopes.c.id == key,
                     scopes.c.allocated <= cap - ceiling).values(allocated=scopes.c.allocated + ceiling))
                 if changed.rowcount != 1:

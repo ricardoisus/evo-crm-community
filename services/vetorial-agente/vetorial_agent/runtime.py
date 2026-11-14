@@ -8,6 +8,7 @@ import time
 import re
 from .adapters import validate_action, validate_output
 from .configuration import ConfigurationUnavailable
+from .telemetry import Execution
 
 
 FIRST_BLOCK_TYPING_CAP_SECONDS = 6
@@ -201,7 +202,6 @@ class Worker:
         if not row:
             return False
         ident, version = row["id"], row["version"]
-        from .telemetry import Execution
         execution = Execution(self.telemetry, self.snapshot, row, "atendimento", self.clock) if self.snapshot and self.telemetry else None
         status = "succeeded"
         try:
@@ -325,11 +325,10 @@ class Worker:
     def analyse(self):
         if not self.prepare():
             return False
-        rows = (self.store.analyse_due(self.clock(), silence=self.snapshot.payload["behavior"]["analysis_silence_ms"] / 1000,
+        rows = (self.store.analyse_due(self.clock(), silence=self.snapshot.payload["behavior"]["analysis_silence_ms"] // 1000,
                                         max_attempts=self.setting("runtime", "max_attempts", 3), authority=self.authority)
                 if self.snapshot else self.store.analyse_due(self.clock()))
         for row in rows:
-            from .telemetry import Execution
             execution = Execution(self.telemetry, self.snapshot, row, "analista", self.clock) if self.snapshot and self.telemetry else None
             status = "succeeded"
             try:

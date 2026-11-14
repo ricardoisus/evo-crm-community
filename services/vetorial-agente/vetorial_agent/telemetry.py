@@ -140,7 +140,7 @@ class Telemetry:
         """
         now_ms = int(time.time() * 1000) if now_ms is None else integer(now_ms)
         with self.store.engine.begin() as connection:
-            rows = connection.execute(select(ledger.c.payload, outbox.c.attempts).join(outbox, ledger.c.event_id == outbox.c.event_id).where(outbox.c.delivered_ms.is_(None), outbox.c.next_attempt_ms <= now_ms).order_by(outbox.c.next_attempt_ms, ledger.c.event_id).limit(min(max(limit, 1), 100))).all()
+            rows = connection.execute(select(ledger.c.payload, outbox.c.attempts).join(outbox, ledger.c.event_id == outbox.c.event_id).where(outbox.c.delivered_ms.is_(None), outbox.c.next_attempt_ms <= now_ms).order_by(outbox.c.next_attempt_ms, ledger.c.event_id).limit(min(max(limit, 1), 100)).with_for_update(skip_locked=True)).all()
             for payload, attempts in rows:
                 connection.execute(outbox.update().where(outbox.c.event_id == payload["event_id"]).values(attempts=attempts + 1, next_attempt_ms=now_ms + min(300000, 1000 * 2 ** min(attempts, 8))))
         if not rows:

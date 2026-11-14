@@ -167,3 +167,27 @@ def test_pg_sandbox_two_sessions_share_one_operator_envelope():
             sample_count=3, ceiling=300000)
     with store.engine.connect() as c:
         assert c.execute(select(sessions.c.ceiling).where(sessions.c.id == accepted[0])).scalar_one() == 300000
+
+
+def test_pg_telemetry_flush_skips_outbox_locked_by_another_worker():
+    from sqlalchemy import select
+    from vetorial_agent.telemetry import Telemetry, outbox
+    from .test_telemetry import execution
+
+    store = setup()
+    telemetry = Telemetry(store)
+    event = execution()
+    telemetry.record(event)
+    received = []
+
+    def deliver(batch):
+        received.extend(item['event_id'] for item in batch)
+        return [item['event_id'] for item in batch]
+
+    with store.engine.begin() as owner:
+        owner.execute(select(outbox).where(outbox.c.event_id == event['event_id']).with_for_update()).all()
+        telemetry.flush(deliver, now_ms=0)
+        assert event['event_id'] not in received
+        assert owner.execute(select(outbox.c.attempts).where(outbox.c.event_id == event['event_id'])).scalar_one() == 0
+    telemetry.flush(deliver, now_ms=0)
+    assert received.count(event['event_id']) == 1
