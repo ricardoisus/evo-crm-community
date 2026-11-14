@@ -7,6 +7,11 @@ import copy
 import hashlib
 import json
 import time
+from pathlib import Path
+from jsonschema import Draft7Validator
+
+SNAPSHOT_SCHEMA = json.loads(Path(__file__).with_name("snapshot.schema.json").read_text())
+SNAPSHOT_VALIDATOR = Draft7Validator(SNAPSHOT_SCHEMA)
 from dataclasses import dataclass
 
 MODELS = frozenset(("gpt-6-luna", "gpt-6.1-sol"))
@@ -43,6 +48,21 @@ def digest(payload):
 
 def validate(payload):
     canonical(payload)
+    if not SNAPSHOT_VALIDATOR.is_valid(payload):
+        raise InvalidConfiguration("Configuração inválida")
+    activation = payload["activation"]
+    if "pilot" in (activation["atendimento"], activation["analista"]) and not activation["allowlist"]:
+        raise InvalidConfiguration("Lista piloto vazia")
+    hours = payload["behavior"]["office_hours"]
+    if hours["enabled"] != bool(hours["windows"]):
+        raise InvalidConfiguration("Expediente inválido")
+    windows = sorted(hours["windows"], key=lambda w: (w["weekday"], w["start"]))
+    for w in windows:
+        if w["start"] >= w["end"]:
+            raise InvalidConfiguration("Expediente inválido")
+    for a, b in zip(windows, windows[1:]):
+        if a["weekday"] == b["weekday"] and a["end"] > b["start"]:
+            raise InvalidConfiguration("Expediente sobreposto")
     if set(payload) != ROOT_KEYS or payload["schema_version"] != 1:
         raise InvalidConfiguration("Versão de configuração inválida")
     for name in ("revision", "policy_epoch"):

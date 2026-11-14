@@ -136,12 +136,12 @@ def test_media_and_audio_caps_and_pdf_pages_read_snapshot(monkeypatch, tmp_path)
 
 def test_calendly_google_and_agenda_parameters_are_pinned(monkeypatch, tmp_path):
     def mutate(p):
-        p['integrations']['booking_minutes'] = 30
+        p['integrations']['booking_minutes'] = 45
         p['runtime']['agenda_horizon_days'] = 2
         p['runtime']['slot_validity_ms'] = 1000
     config, _, w = setup(monkeypatch, tmp_path, mutate)
     a = w.calendar
-    assert a.minutes == 30
+    assert a.minutes == 45
     assert a.timezone == config['payload']['behavior']['timezone']
     now = datetime(2030, 1, 1, tzinfo=timezone.utc)
     a.clock = lambda: now
