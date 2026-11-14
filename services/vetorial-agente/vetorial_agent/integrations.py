@@ -11,7 +11,7 @@ STATES = ("configured", "absent", "error")
 class IntegrationProbes:
     def __init__(self, routes, *, client=None, clock=time.monotonic):
         self.routes = routes
-        self.client = client or httpx.Client(timeout=3, follow_redirects=False)
+        self.client = client or httpx.Client(timeout=10, follow_redirects=False)
         self.clock = clock
         self.cached, self.expires = None, 0
 
