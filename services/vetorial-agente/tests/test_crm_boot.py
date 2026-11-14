@@ -89,3 +89,18 @@ def test_legacy_selection_and_invalid_source(monkeypatch):
     monkeypatch.setenv('VETORIAL_AGENT_CONTROL_SOURCE', 'both')
     with pytest.raises(RuntimeError):
         app.build()
+
+
+def test_production_passes_gateway_route_from_env(monkeypatch):
+    from vetorial_agent import app as app_module
+    seen = {}
+
+    def fake_build(*, gateway_routes=None):
+        seen["routes"] = gateway_routes
+        return ("a", "b")
+
+    monkeypatch.setattr(app_module, "build", fake_build)
+    monkeypatch.setattr(app_module, "create_app", lambda *args: args)
+    monkeypatch.setenv("CALENDAR_GATEWAY_URL", "http://gateway.example/hook")
+    assert app_module.production() == ("a", "b")
+    assert seen["routes"] == {"vetorial-calendar-v1": "http://gateway.example/hook"}

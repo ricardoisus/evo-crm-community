@@ -323,7 +323,9 @@ def create_app(store, policy, bridge_secret, worker=None, *, sandbox=None, autho
 
 def production():
     try:
-        return create_app(*build())
+        # Technical bootstrap: the Google gateway URL stays an env route (not behavior config).
+        routes = {"vetorial-calendar-v1": os.environ.get("CALENDAR_GATEWAY_URL", "")}
+        return create_app(*build(gateway_routes=routes))
     except Exception:
         raise RuntimeError(
             "Configuração do agente incompleta; conferir secrets e variáveis do runbook"
