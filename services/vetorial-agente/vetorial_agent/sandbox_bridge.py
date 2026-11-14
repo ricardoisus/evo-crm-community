@@ -7,7 +7,7 @@ import copy
 import json
 from sqlalchemy import select
 from .adapters import OpenAI, strict
-from .sandbox import Sandbox, SandboxBudget, SandboxDenied, sessions
+from .sandbox import Sandbox, SandboxBudget, SandboxDenied, sessions, calls
 from .pricing import CATALOG, VERSION
 
 
@@ -108,7 +108,12 @@ class BridgeSandbox:
             if action == 'close':
                 self.budget.close(sid, self.session(sid)['actor_id'])
         session = self.session(sid)
+        with self.budget.store.engine.connect() as connection:
+            ledger = connection.execute(select(calls).where(calls.c.session_id == sid)).mappings().all()
+        spent = sum(row['actual'] or 0 for row in ledger if row['actual'] is not None)
+        reserved = sum(row['reserved'] for row in ledger if row['actual'] is None)
         return {'session_id': sid, 'ceiling_micro_usd': session['ceiling'],
+                'spent_micro_usd': spent, 'reserved_micro_usd': reserved,
                 'spent_reserved_micro_usd': session['spent_reserved'], 'closed': bool(session['closed']),
                 'expires_ms': session['expires_ms'], 'pricing_version': VERSION, 'mode': 'simulation'}
 

@@ -218,3 +218,9 @@ claim, then releases it gracefully, adopts the draft and resumes with zero addit
 inference/send. Rollback keeps the adopted draft compatible with the legacy worker
 (which ignores the added fence). Production I7 must still collect actual old/new
 inventories and effective configuration; the synthetic fixture is not that evidence.
+
+## I4 — Interface e orçamento
+
+Interface React no submódulo `evo-ai-frontend-community`, branch `codex/evo-integracao-backend`, sem alteração de Core/Processor. Instruções repetíveis em `evo-ai-frontend-community/docs/integracao-i4.md`; evidências originais em OPDIR `entregas/I4-interface.md` e `entregas/capturas/integracao/depois/`.
+
+A consulta HMAC do sandbox acrescenta `spent_micro_usd` e `reserved_micro_usd`, derivados das chamadas do próprio SandboxBudget. `ceiling_micro_usd` e `spent_reserved_micro_usd` continuam no DTO; nenhuma segunda autoridade financeira ou inferência paga foi criada. Teste de reserva/consumo verifica 100 reservados → 40 liquidados/zero reservado, sem modelo. O transporte desta interface oferece somente simulação offline.

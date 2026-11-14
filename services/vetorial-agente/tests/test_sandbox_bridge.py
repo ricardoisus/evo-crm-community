@@ -96,3 +96,19 @@ def test_two_concurrent_sessions_cannot_bypass_operator_cap(tmp_path):
     assert sum(x is not None for x in result) == 1
     with store.engine.connect() as c:
         assert list(c.execute(select(scopes.c.allocated)).scalars()) == [300000, 300000]
+
+
+def test_budget_view_separates_settled_and_reserved_without_a_second_authority(tmp_path):
+    store, _ = make(tmp_path)
+    bridge = BridgeSandbox(store, clock=lambda: NOW)
+    data = plan()
+    sid = bridge.manage(data)['session_id']
+    request_id = str(uuid.uuid4())
+    bridge.budget.reserve(sid, data['actor_id'], request_id, 'Cenário', 100)
+    reserved = bridge.manage(dict(action='show', session_id=sid))
+    assert reserved['spent_micro_usd'] == 0
+    assert reserved['reserved_micro_usd'] == reserved['spent_reserved_micro_usd'] == 100
+    bridge.budget.settle(sid, request_id, {'mensagens': ['Simulação']}, 40)
+    settled = bridge.manage(dict(action='show', session_id=sid))
+    assert settled['spent_micro_usd'] == settled['spent_reserved_micro_usd'] == 40
+    assert settled['reserved_micro_usd'] == 0
