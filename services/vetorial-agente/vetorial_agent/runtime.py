@@ -7,6 +7,8 @@ import json
 import time
 import re
 from .adapters import validate_action, validate_output
+from .configuration import ConfigurationUnavailable
+from .telemetry import Execution
 
 
 FIRST_BLOCK_TYPING_CAP_SECONDS = 6
@@ -22,7 +24,8 @@ class PendingReceipt(Exception):
 
 class Worker:
     def __init__(
-        self, store, crm, model, calendar, policy, sleep=time.sleep, clock=time.time
+        self, store, crm, model, calendar, policy, sleep=time.sleep, clock=time.time,
+        configuration_cache=None, configure=None, telemetry=None
     ):
         self.store, self.crm, self.model, self.calendar, self.policy = (
             store,
@@ -32,8 +35,44 @@ class Worker:
             policy,
         )
         self.sleep, self.clock = sleep, clock
+        self.configuration_cache, self.configure = configuration_cache, configure
+        self.snapshot = None
+        self.authority = None
+        self.telemetry = telemetry
+        self.telemetry_pump = None
+
+    def prepare(self):
+        """Pin before claiming work: an unavailable configuration leaves queues untouched.
+
+        configure constructs adapters from the pinned payload, never from legacy env.
+        The snapshot is kept for the entire execution, including all tool calls.
+        """
+        if self.configuration_cache is None:
+            return True  # A14 compatibility path, unchanged.
+        try:
+            snapshot = self.configuration_cache.pin()
+            model, calendar, policy = self.configure(snapshot)
+        except ConfigurationUnavailable:
+            return False
+        from .configuration import EffectFence
+        self.authority = EffectFence(snapshot, self.configuration_cache)
+        self.snapshot = snapshot
+        self.model, self.calendar, self.policy = model, calendar, policy
+        return True
+
+    def setting(self, section, name, legacy):
+        return self.snapshot.payload[section][name] if self.snapshot else legacy
+
+    def check_configuration(self):
+        if self.configuration_cache is None:
+            return
+        current = self.configuration_cache.pin()
+        if self.snapshot is None or current.fence() != self.snapshot.fence():
+            raise Stale()
+
 
     def guard(self, ident, version, analysis=False):
+        self.check_configuration()
         row = self.store.get(ident)
         if row is None or row["version"] != version or (row["paused"] and not analysis):
             raise Stale()
@@ -51,6 +90,8 @@ class Worker:
     def command(self, row, suffix, kind, **payload):
         self.guard(row["id"], row["version"], analysis=kind == "analysis")
         key = f"{row['id']}:{row['version']}:{suffix}"
+        if self.authority:
+            payload = dict(payload, **self.authority.data())
         data = dict(kind=kind, **payload)
         return self.store.operation(
             key,
@@ -58,7 +99,7 @@ class Worker:
             kind,
             data,
             lambda k: self.crm.command(row["id"], row["version"], k, kind, **payload),
-            now=self.clock(),
+            now=self.clock(), authority=self.authority,
         )
 
     def context(self, row, analysis=False):
@@ -70,16 +111,20 @@ class Worker:
             else context["paused"] or not context["allowed"]
         ):
             raise Stale()
+        if len(context["messages"]) > self.setting("runtime", "history_messages", 1000):
+            raise ValueError("historico_excede_limite")
         media_count = 0
         for message in context["messages"]:
             for attachment in message.get("attachments", []):
                 self.guard(row["id"], row["version"], analysis=analysis)
                 media_count += 1
-                if media_count > 10 or attachment.get("bytes", 0) > 20 * 1024 * 1024:
+                if media_count > self.setting("runtime", "media_items", 10) or attachment.get("bytes", 0) > self.setting("runtime", "attachment_bytes", 20 * 1024 * 1024):
                     message["media_unavailable"] = True
                     continue
                 try:
                     key = f"{row['id']}:media:{attachment['id']}"
+                    if self.snapshot:
+                        key += ":" + self.snapshot.sha256
 
                     def extract(_):
                         d = self.crm.command(
@@ -88,6 +133,7 @@ class Worker:
                             f"{row['id']}:{row['version']}:{key}",
                             "analysis_media" if analysis else "media",
                             attachment_id=attachment["id"],
+                            **(self.authority.data() if self.authority else {}),
                         )
                         return {"text": self.model.media(d["mime"], d["base64"])}
 
@@ -97,15 +143,18 @@ class Worker:
                         "media",
                         {"id": attachment["id"]},
                         extract,
-                        now=self.clock(),
+                        now=self.clock(), authority=self.authority,
                     )
                     message.setdefault("media_text", []).append(result["text"])
+                except ConfigurationUnavailable:
+                    raise
                 except (ValueError, RuntimeError):
                     message["media_unavailable"] = True
         return context
 
     def action(self, row, name, args):
-        args = validate_action(name, args)
+        contract = self.snapshot.payload["roles"]["atendimento"]["actions"] if self.snapshot else None
+        args = validate_action(name, args, contract)
         self.guard(row["id"], row["version"])
         if name == "atualizar_negocio":
             digest = hashlib.sha256(
@@ -130,7 +179,7 @@ class Worker:
         ).hexdigest()[:24]
         key = f"{row['id']}:{row['version']}:agenda:{digest}"
         if mutable and not self.store.quota_key(
-            row["id"], ["agendar", "remarcar", "cancelar"], 3, key, self.clock()
+            row["id"], ["agendar", "remarcar", "cancelar"], self.setting("runtime", "agenda_mutations_per_hour", 3), key, self.clock()
         ):
             return {"sucesso": False, "erro": "limite_de_agenda"}
         # Calendar's durable receipts/Google event ID close timeout-after-commit gap.
@@ -140,29 +189,38 @@ class Worker:
             name,
             payload,
             lambda k: self.calendar.call(row["id"], k, name, args),
-            now=self.clock(),
+            now=self.clock(), authority=self.authority,
         )
         self.guard(row["id"], row["version"])
         return result
 
     def tick(self):
-        row = self.store.claim(self.clock())
+        if not self.prepare():
+            return False
+        row = (self.store.claim(self.clock(), authority=self.authority)
+               if self.authority else self.store.claim(self.clock()))
         if not row:
             return False
         ident, version = row["id"], row["version"]
+        execution = Execution(self.telemetry, self.snapshot, row, "atendimento", self.clock) if self.snapshot and self.telemetry else None
+        status = "succeeded"
         try:
             if not self.policy.allows(row["phone"]):
+                status = "discarded"
                 self.store.finish(ident, version, paused=True, reason="politica")
                 return True
             draft = row.get("draft")
-            if not draft or draft.get("version") != version:
+            if not draft or draft.get("version") != version or (self.snapshot and draft.get("configuration") != self.snapshot.fence()):
                 output = self.model.run(
                     self.context(row), lambda n, a: self.action(row, n, a)
                 )
-                validate_output(output)
+                validate_output(output,
+                                self.snapshot.payload["roles"]["atendimento"]["actions"] if self.snapshot else None,
+                                self.snapshot.payload["limits"] if self.snapshot else None)
                 self.guard(ident, version)
                 draft = {
                     "version": version,
+                    **({"configuration": self.authority.data()} if self.authority else {}),
                     "output": output,
                     "handoff": row.get("handoff"),
                 }
@@ -173,11 +231,13 @@ class Worker:
                 key = f"{ident}:{version}:{suffix}"
                 if self.store.result(key) is not None:
                     # Accepted previously: poll its durable transport receipt, never regenerate it.
-                    receipt = self.crm.command(ident, version, key, "send", text=block)
+                    self.check_configuration()
+                    receipt = self.crm.command(ident, version, key, "send", text=block,
+                                               **(self.authority.data() if self.authority else {}))
                     if receipt.get("status") != "sent":
                         raise PendingReceipt()
                     continue
-                if not self.store.quota_key(ident, ["send"], 20, key, self.clock()):
+                if not self.store.quota_key(ident, ["send"], self.setting("limits", "messages_per_hour", 20), key, self.clock()):
                     self.command(
                         row,
                         "limit",
@@ -188,14 +248,19 @@ class Worker:
                     raise Stale()
                 self.command(row, f"typing:{index}", "typing")
                 # Deterministic 1500 chars/min, bounded; interrupts checked every 0.5 sec.
-                remaining = min(FIRST_BLOCK_TYPING_CAP_SECONDS if index == 0 else 12, max(0.5, len(block) * 60 / 1500))
+                behavior = self.snapshot.payload["behavior"] if self.snapshot else {}
+                interval = behavior.get("recheck_ms", 500) / 1000
+                cap = behavior.get("first_typing_cap_ms" if index == 0 else "next_typing_cap_ms", 6000 if index == 0 else 12000) / 1000
+                remaining = min(cap, max(interval, len(block) * 60 / behavior.get("typing_cpm", 1500)))
                 while remaining > 0:
-                    self.sleep(min(0.5, remaining))
-                    remaining -= 0.5
+                    self.sleep(min(interval, remaining))
+                    remaining -= interval
                     self.guard(ident, version)
                 receipt = self.command(row, suffix, "send", text=block)
                 if receipt.get("status") != "sent":
                     raise PendingReceipt()
+            if execution and output["mensagens"]:
+                execution.outcome = "send_confirmed"
             if draft.get("handoff"):
                 self.command(
                     row,
@@ -215,7 +280,13 @@ class Worker:
             self.store.finish(
                 ident, version, done=version, lease=0, last_event=self.clock()
             )
+        except ConfigurationUnavailable:
+            status = "discarded"
+            # No retries/handoff while control is unavailable. Preserve draft and queue.
+            self.store.finish(ident, version, lease=self.clock() + 2,
+                              attempts=max(0, row["attempts"] - 1))
         except PendingReceipt:
+            status = "uncertain"
             self.store.finish(
                 ident,
                 version,
@@ -223,10 +294,12 @@ class Worker:
                 attempts=max(0, row["attempts"] - 1),
             )
         except Stale:
+            status = "discarded"
             self.store.finish(ident, version, draft=None, lease=self.clock() + 2)
         except Exception:
+            status = "failed"
             # No exception payloads: provider errors can contain PII/headers.
-            if row["attempts"] >= 3:
+            if row["attempts"] >= self.setting("runtime", "max_attempts", 3):
                 try:
                     self.command(
                         row,
@@ -244,10 +317,20 @@ class Worker:
                 self.store.finish(
                     ident, version, lease=self.clock() + 15, reason="tentativa_pendente"
                 )
+        finally:
+            if execution:
+                execution.finish(status)
         return True
 
     def analyse(self):
-        for row in self.store.analyse_due(self.clock()):
+        if not self.prepare():
+            return False
+        rows = (self.store.analyse_due(self.clock(), silence=self.snapshot.payload["behavior"]["analysis_silence_ms"] // 1000,
+                                        max_attempts=self.setting("runtime", "max_attempts", 3), authority=self.authority)
+                if self.snapshot else self.store.analyse_due(self.clock()))
+        for row in rows:
+            execution = Execution(self.telemetry, self.snapshot, row, "analista", self.clock) if self.snapshot and self.telemetry else None
+            status = "succeeded"
             try:
                 analysis = self.model.run(
                     self.context(row, analysis=True), None, analyst=True
@@ -276,7 +359,8 @@ class Worker:
                 self.store.finish(
                     row["id"], row["version"], analysed=row["version"], analysis_lease=0
                 )
-            except Exception:
+            except Exception as error:
+                status = "discarded" if isinstance(error, (Stale, ConfigurationUnavailable)) else "failed"
                 self.store.finish(
                     row["id"],
                     row["version"],
@@ -284,6 +368,9 @@ class Worker:
                     reason="analise_pendente",
                 )
                 continue
+            finally:
+                if execution:
+                    execution.finish(status)
 
 
 def consent(context, action, args):

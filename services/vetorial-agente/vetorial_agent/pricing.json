@@ -1,0 +1,29 @@
+{
+  "version": "2026-11-13.v1",
+  "verified_on": "2026-11-13",
+  "currency": "USD",
+  "openai": {
+    "source": "https://developers.openai.com/api/docs/pricing",
+    "tier": "standard",
+    "context": "short",
+    "unit": "micro_usd_per_million_tokens",
+    "models": {
+      "gpt-6-luna": {
+        "input": 100000,
+        "cached": 10000,
+        "output": 500000
+      },
+      "gpt-6.1-sol": {
+        "input": 2000000,
+        "cached": 100000,
+        "output": 10000000
+      }
+    }
+  },
+  "groq": {
+    "source": "https://console.groq.com/docs/speech-to-text",
+    "model": "whisper-large-v3-turbo",
+    "micro_usd_per_hour": 40000,
+    "minimum_seconds": 10
+  }
+}

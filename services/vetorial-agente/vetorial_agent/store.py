@@ -65,6 +65,8 @@ class Store:
         self.engine = create_engine(url, pool_pre_ping=True)
 
     def migrate(self):
+        from . import telemetry, sandbox  # register additive tables before operator DDL
+
         meta.create_all(
             self.engine
         )  # additive v1; operator runs before service, not on HTTP startup
@@ -77,8 +79,11 @@ class Store:
         )
 
     def ingest(self, event, policy, now=None):
+        fence = policy.check()
+        event = dict(event, configuration=fence) if fence else event
         now = time.time() if now is None else now
         with self.engine.begin() as c:
+            policy.check()
             inserted = c.execute(
                 self.insert(events)
                 .values(
@@ -140,7 +145,7 @@ class Store:
                     version=event["version"],
                     paused=paused,
                     phone=event["phone"],
-                    due=now + (30 if event.get("audio") else 20),
+                    due=now + policy.behavior.get("audio_debounce_ms" if event.get("audio") else "text_debounce_ms", 30000 if event.get("audio") else 20000) / 1000,
                     last_event=now,
                     lease=0,
                     attempts=0,
@@ -173,7 +178,9 @@ class Store:
                 .values(**values)
             )
 
-    def claim(self, now=None):
+    def claim(self, now=None, *, authority=None):
+        if authority:
+            authority.check()
         now = time.time() if now is None else now
         with self.engine.begin() as c:
             row = (
@@ -201,7 +208,9 @@ class Store:
                 )
                 return dict(row, attempts=row["attempts"] + 1)
 
-    def analyse_due(self, now=None):
+    def analyse_due(self, now=None, silence=300, *, max_attempts=3, authority=None):
+        if authority:
+            authority.check()
         now = time.time() if now is None else now
         with self.engine.begin() as c:
             row = (
@@ -211,8 +220,8 @@ class Store:
                         and_(
                             conversations.c.analysed < conversations.c.version,
                             conversations.c.analysis_lease < now,
-                            conversations.c.analysis_attempts < 3,
-                            conversations.c.last_event <= now - 300,
+                            conversations.c.analysis_attempts < max_attempts,
+                            conversations.c.last_event <= now - silence,
                         )
                     )
                     .with_for_update(skip_locked=True)
@@ -233,9 +242,13 @@ class Store:
             )
             return [dict(row)]
 
-    def operation(self, key, conversation_id, kind, payload, invoke, now=None):
+    def operation(self, key, conversation_id, kind, payload, invoke, now=None, authority=None):
         """Stable keys are passed through to BOTH CRM and calendar. Their receipts close the crash gap."""
+        if authority:
+            payload = dict(payload, configuration=authority.data())
         with self.engine.begin() as c:
+            if authority:
+                authority.check()
             c.execute(
                 self.insert(operations)
                 .values(
@@ -252,10 +265,20 @@ class Store:
                 .mappings()
                 .one()
             )
-            if row["conversation_id"] != conversation_id or row["payload"] != payload:
+            if row["conversation_id"] != conversation_id:
                 raise ValueError("idempotency_collision")
+            if row["payload"] != payload:
+                # A completed receipt belongs to its original revision. Reuse only
+                # an identical logical effect; never invoke it under a new fence.
+                def logical(data):
+                    return {k: v for k, v in data.items()
+                            if k not in ("configuration", "revision", "policy_epoch", "sha256")}
+                if row["result"] is None or logical(row["payload"]) != logical(payload):
+                    raise ValueError("idempotency_collision")
             if row["result"] is not None:
                 return row["result"]
+        if authority:
+            authority.check()
         result = invoke(
             key
         )  # Remote must dedup key atomically; retry after timeout uses same key.

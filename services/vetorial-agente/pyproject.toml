@@ -14,4 +14,4 @@ include = ["vetorial_agent*"]
 testpaths = ["tests"]
 
 [tool.setuptools.package-data]
-vetorial_agent = ["prompts/*"]
+vetorial_agent = ["prompts/*", "pricing.json", "snapshot.schema.json"]

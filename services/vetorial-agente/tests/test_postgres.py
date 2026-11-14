@@ -81,3 +81,113 @@ def test_pg_calendar_serializes_overlapping_bookings_and_replays():
         results = list(pool.map(book, [winner] * 4))
     assert all(r["sucesso"] for r in results)
     assert g.mutated == 1
+
+
+def test_pg_telemetry_duplicate_record_and_persistent_retry():
+    from vetorial_agent.telemetry import Telemetry, ledger, outbox
+    from .test_telemetry import execution
+    from sqlalchemy import select
+    store = setup()
+    event = execution()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda _: Telemetry(store).record(event), range(16)))
+    with store.engine.connect() as connection:
+        assert len(connection.execute(select(ledger).where(ledger.c.event_id == event['event_id'])).all()) == 1
+        assert len(connection.execute(select(outbox).where(outbox.c.event_id == event['event_id'])).all()) == 1
+    # Full-suite DB may contain older pending telemetry; acknowledge all batches safely.
+    telemetry = Telemetry(Store(URL))
+    delivered = []
+    def receive(batch):
+        delivered.extend(item['event_id'] for item in batch)
+        return [item['event_id'] for item in batch]
+    telemetry.flush(receive, now_ms=1000000)
+    assert event['event_id'] in delivered
+
+
+def test_pg_sandbox_budget_serializes_sessions_and_preserves_unknown():
+    from vetorial_agent.sandbox import SandboxBudget, SandboxLimit, calls, sessions
+    from sqlalchemy import select
+    store = setup()
+    actor = 'synthetic-' + str(uuid.uuid4())
+    # A unique future synthetic day isolates the fixed front/day quota from reruns.
+    # Clock never reaches production; this database is guarded by setup().
+    now_ms = 1800000000000 + (uuid.uuid4().int % 100000) * 86400000
+    budget = SandboxBudget(store, clock=lambda: now_ms)
+    def create(_):
+        try:
+            return budget.create(actor_id=actor, deployment_id='synthetic', revision=1,
+                purpose='Concorrência sintética', criteria='Nunca exceder 0,50 por operador',
+                sample_count=3, ceiling=100000)
+        except SandboxLimit:
+            return None
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        accepted = [sid for sid in pool.map(create, range(12)) if sid]
+    assert len(accepted) == 5
+    sid = accepted[0]
+    def reserve(_):
+        try:
+            budget.reserve(sid, actor, str(uuid.uuid4()), 'Olá', 60000)
+            return True
+        except SandboxLimit:
+            return False
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        assert sum(pool.map(reserve, range(12))) == 1
+    restarted = SandboxBudget(Store(URL), clock=lambda: now_ms)
+    with pytest.raises(SandboxLimit):
+        restarted.reserve(sid, actor, str(uuid.uuid4()), 'Olá', 1)
+    with store.engine.connect() as connection:
+        assert connection.execute(select(sessions.c.spent_reserved).where(sessions.c.id == sid)).scalar_one() == 60000
+        assert len(connection.execute(select(calls).where(calls.c.session_id == sid)).all()) == 1
+
+
+def test_pg_sandbox_two_sessions_share_one_operator_envelope():
+    from vetorial_agent.sandbox import SandboxBudget, SandboxLimit, scopes, sessions
+    from sqlalchemy import select
+    from datetime import timedelta
+    store = setup()
+    # Unique synthetic day isolates the front envelope without deleting other tests.
+    day = datetime(2040, 1, 1, tzinfo=timezone.utc) + timedelta(days=uuid.uuid4().int % 100000)
+    now = int(day.timestamp() * 1000)
+    budget = SandboxBudget(store, clock=lambda: now)
+    actor = str(uuid.uuid4())
+    def attempt(_):
+        try:
+            return budget.create(actor_id=actor, deployment_id='synthetic', revision=1,
+                purpose='Concorrência', criteria='Teto único', sample_count=3, ceiling=300000)
+        except SandboxLimit:
+            return None
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(attempt, range(2)))
+    accepted = [s for s in results if s]
+    assert len(accepted) == 1
+    # Restart and a second session cannot reset the operator envelope.
+    with pytest.raises(SandboxLimit):
+        SandboxBudget(Store(URL), clock=lambda: now).create(actor_id=actor,
+            deployment_id='another', revision=1, purpose='Teste', criteria='Teto único',
+            sample_count=3, ceiling=300000)
+    with store.engine.connect() as c:
+        assert c.execute(select(sessions.c.ceiling).where(sessions.c.id == accepted[0])).scalar_one() == 300000
+
+
+def test_pg_telemetry_flush_skips_outbox_locked_by_another_worker():
+    from sqlalchemy import select
+    from vetorial_agent.telemetry import Telemetry, outbox
+    from .test_telemetry import execution
+
+    store = setup()
+    telemetry = Telemetry(store)
+    event = execution()
+    telemetry.record(event)
+    received = []
+
+    def deliver(batch):
+        received.extend(item['event_id'] for item in batch)
+        return [item['event_id'] for item in batch]
+
+    with store.engine.begin() as owner:
+        owner.execute(select(outbox).where(outbox.c.event_id == event['event_id']).with_for_update()).all()
+        telemetry.flush(deliver, now_ms=0)
+        assert event['event_id'] not in received
+        assert owner.execute(select(outbox.c.attempts).where(outbox.c.event_id == event['event_id'])).scalar_one() == 0
+    telemetry.flush(deliver, now_ms=0)
+    assert received.count(event['event_id']) == 1
