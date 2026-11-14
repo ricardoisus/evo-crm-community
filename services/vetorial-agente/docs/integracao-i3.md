@@ -155,3 +155,13 @@ checking revision, epoch and hash against the published configuration.
   pricing_version; custo segue unknown/null, preservado por reinício/retry, para
   conciliação posterior com evidência completa e versão histórica. Nenhuma chamada
   paga é habilitada por este catálogo ou endpoint.
+
+### J9 — contrato de operação no CRM (13/11/2026)
+
+A ativação off/pilot/all e o binding são mutações HTTP no CRM, publicando revisão e
+policy_epoch atômicos; o runtime continua consumindo o snapshot existente. All exige
+nonce persistido de 60 s, uso único, ator/perfil/hash e frase `ATIVAR PARA TODOS` com
+confirm booleano. Aceite exclusivamente sintético; nenhum modo real foi alterado.
+Contrato e validações do expediente/binding/grant de responsável estão em
+`_evo-i3-crm/docs/vetorial-integration-i3.md`, seção J9. Nenhum código executável do
+runtime muda nesta etapa. Regressão completa com provedores dublês: 183 testes verdes.
