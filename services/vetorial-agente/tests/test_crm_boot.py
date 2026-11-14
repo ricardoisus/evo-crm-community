@@ -10,7 +10,7 @@ from vetorial_agent.store import Store
 
 
 def envelope():
-    return candidate(deployment_id='synthetic', bot_id='bot', inbox_id='inbox', pipeline_id=None,
+    return candidate(deployment_id='11111111-1111-4111-8111-111111111111', bot_id='bot', inbox_id='inbox', pipeline_id=None,
                      allowlist=['+15550000002'], internal_numbers=[], project_id='proj_synthetic',
                      event_type='https://api.calendly.com/event_types/00000000-0000-4000-8000-000000000004',
                      calendar_id='synthetic@example.invalid')
@@ -20,7 +20,7 @@ def boot(monkeypatch, tmp_path, config):
     store = Store('sqlite:///' + str(tmp_path / 'queue.db'))
     store.migrate()
     monkeypatch.setenv('VETORIAL_AGENT_CONTROL_SOURCE', 'crm')
-    monkeypatch.setenv('VETORIAL_AGENT_DEPLOYMENT_ID', 'synthetic')
+    monkeypatch.setenv('VETORIAL_AGENT_DEPLOYMENT_ID', '11111111-1111-4111-8111-111111111111')
     monkeypatch.setenv('CRM_URL', 'http://synthetic.invalid')
     monkeypatch.setattr(app, 'secret', lambda name: 'postgresql://synthetic' if name == 'DATABASE_URL' else 's' * 40)
     monkeypatch.setattr(app, 'Store', lambda _: store)

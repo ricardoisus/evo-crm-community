@@ -1,3 +1,4 @@
+from .telemetry import measured
 import base64
 import copy
 import io
@@ -180,6 +181,7 @@ class OpenAI:
         )
         self.usage = []
 
+    @measured("openai")
     def post(self, path, **kwargs):
         fence = self.authority.data() if self.authority else {}
         if path == "/responses":

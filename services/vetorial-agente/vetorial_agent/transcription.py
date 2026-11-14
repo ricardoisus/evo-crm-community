@@ -1,5 +1,6 @@
 """Groq-only speech adapter. No OpenAI fallback; raw audio never logged."""
 import httpx
+from .telemetry import measured
 
 
 class GroqTranscription:
@@ -14,6 +15,7 @@ class GroqTranscription:
         )
         self.usage = []
 
+    @measured("groq")
     def transcribe(self, mime, raw):
         fence = self.authority.data() if self.authority else {}
         if not self.key:

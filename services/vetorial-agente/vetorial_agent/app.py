@@ -145,7 +145,15 @@ def build(*, gateway_routes=None):
             from .configuration import ConfigurationUnavailable
             raise ConfigurationUnavailable("Snapshot incompleto") from None
 
-    worker = Worker(store, crm, None, None, None, configuration_cache=cache, configure=configure)
+    from .telemetry import Telemetry
+    worker = Worker(store, crm, None, None, None, configuration_cache=cache, configure=configure, telemetry=Telemetry(store))
+    from .telemetry import TelemetryPump, HTTPDelivery
+    worker.telemetry_pump = TelemetryPump(worker, HTTPDelivery(os.environ["CRM_URL"], bridge_secret),
+        {name: "configured" if present else "absent" for name, present in {
+            "openai": bool(api_key), "groq": bool(secret("GROQ_API_KEY")),
+            "calendly": bool(secret("CALENDLY_TOKEN")),
+            "google_gateway": bool(gateway_routes and secret("CALENDAR_GATEWAY_SECRET")),
+        }.items()})
     worker.prepare()  # An unavailable CRM does not prevent HTTP boot or consume queues.
     return store, None, bridge_secret, worker
 
@@ -160,10 +168,25 @@ def create_app(store, policy, bridge_secret, worker=None, *, sandbox=None, autho
                 pass  # metrics/readiness expose DB, exceptions must not leak headers/PII
             await asyncio.sleep(1)
 
+    async def telemetry_loop():
+        while True:
+            try:
+                await asyncio.to_thread(worker.telemetry_pump.tick)
+            except Exception:
+                pass
+            await asyncio.sleep(1)
+
     @asynccontextmanager
     async def lifespan(app):
         task = asyncio.create_task(loop()) if worker else None
+        telemetry_task = asyncio.create_task(telemetry_loop()) if worker and getattr(worker, "telemetry_pump", None) else None
         yield
+        if telemetry_task:
+            telemetry_task.cancel()
+            try:
+                await telemetry_task
+            except asyncio.CancelledError:
+                pass
         if task:
             task.cancel()
             try:

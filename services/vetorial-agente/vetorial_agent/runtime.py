@@ -24,7 +24,7 @@ class PendingReceipt(Exception):
 class Worker:
     def __init__(
         self, store, crm, model, calendar, policy, sleep=time.sleep, clock=time.time,
-        configuration_cache=None, configure=None
+        configuration_cache=None, configure=None, telemetry=None
     ):
         self.store, self.crm, self.model, self.calendar, self.policy = (
             store,
@@ -37,6 +37,8 @@ class Worker:
         self.configuration_cache, self.configure = configuration_cache, configure
         self.snapshot = None
         self.authority = None
+        self.telemetry = telemetry
+        self.telemetry_pump = None
 
     def prepare(self):
         """Pin before claiming work: an unavailable configuration leaves queues untouched.
@@ -199,8 +201,12 @@ class Worker:
         if not row:
             return False
         ident, version = row["id"], row["version"]
+        from .telemetry import Execution
+        execution = Execution(self.telemetry, self.snapshot, row, "atendimento", self.clock) if self.snapshot and self.telemetry else None
+        status = "succeeded"
         try:
             if not self.policy.allows(row["phone"]):
+                status = "discarded"
                 self.store.finish(ident, version, paused=True, reason="politica")
                 return True
             draft = row.get("draft")
@@ -253,6 +259,8 @@ class Worker:
                 receipt = self.command(row, suffix, "send", text=block)
                 if receipt.get("status") != "sent":
                     raise PendingReceipt()
+            if execution and output["mensagens"]:
+                execution.outcome = "send_confirmed"
             if draft.get("handoff"):
                 self.command(
                     row,
@@ -273,10 +281,12 @@ class Worker:
                 ident, version, done=version, lease=0, last_event=self.clock()
             )
         except ConfigurationUnavailable:
+            status = "discarded"
             # No retries/handoff while control is unavailable. Preserve draft and queue.
             self.store.finish(ident, version, lease=self.clock() + 2,
                               attempts=max(0, row["attempts"] - 1))
         except PendingReceipt:
+            status = "uncertain"
             self.store.finish(
                 ident,
                 version,
@@ -284,8 +294,10 @@ class Worker:
                 attempts=max(0, row["attempts"] - 1),
             )
         except Stale:
+            status = "discarded"
             self.store.finish(ident, version, draft=None, lease=self.clock() + 2)
         except Exception:
+            status = "failed"
             # No exception payloads: provider errors can contain PII/headers.
             if row["attempts"] >= self.setting("runtime", "max_attempts", 3):
                 try:
@@ -305,6 +317,9 @@ class Worker:
                 self.store.finish(
                     ident, version, lease=self.clock() + 15, reason="tentativa_pendente"
                 )
+        finally:
+            if execution:
+                execution.finish(status)
         return True
 
     def analyse(self):
@@ -314,6 +329,9 @@ class Worker:
                                         max_attempts=self.setting("runtime", "max_attempts", 3), authority=self.authority)
                 if self.snapshot else self.store.analyse_due(self.clock()))
         for row in rows:
+            from .telemetry import Execution
+            execution = Execution(self.telemetry, self.snapshot, row, "analista", self.clock) if self.snapshot and self.telemetry else None
+            status = "succeeded"
             try:
                 analysis = self.model.run(
                     self.context(row, analysis=True), None, analyst=True
@@ -342,7 +360,8 @@ class Worker:
                 self.store.finish(
                     row["id"], row["version"], analysed=row["version"], analysis_lease=0
                 )
-            except Exception:
+            except Exception as error:
+                status = "discarded" if isinstance(error, (Stale, ConfigurationUnavailable)) else "failed"
                 self.store.finish(
                     row["id"],
                     row["version"],
@@ -350,6 +369,9 @@ class Worker:
                     reason="analise_pendente",
                 )
                 continue
+            finally:
+                if execution:
+                    execution.finish(status)
 
 
 def consent(context, action, args):

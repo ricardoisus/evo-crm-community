@@ -111,3 +111,20 @@ Fontes: plano §8; I1 §3.3; I2 C3–C5; passagem J2; tests/test_snapshot_compon
 - `tests/test_a14_equivalence.py`: seis conversas sintéticas (texto, áudio, agenda, pausa, fora da lista e transferência), worker legado versus snapshot CRM, provider e mídia dublês. Compara decisões, requests completos com prompts, ferramentas e comandos de negócio.
 - Metadados de protocolo CRM revision/policy_epoch/sha256 e sufixo hash da chave de cache de mídia são conferidos separadamente do conteúdo de negócio; não existem no protocolo legado. Não se declara igualdade byte a byte desses envelopes.
 - Não comprova publicação Rails, transporte HTTP integrado ou evento real; pertencem ao ensaio posterior. Piloto preservado.
+
+## J7 — connected telemetry
+
+In CRM control mode, `build()` injects the durable telemetry producer into the worker.
+Attendance/analysis attempts record succeeded/failed/discarded/uncertain executions;
+each real OpenAI request (including tool rounds/vision) and Groq transcription records
+sanitized usage even when the request or later processing fails. Conversation UUIDs
+are preserved. Unpriced usage remains `unknown` with null cost; J7 does not invent tariffs.
+Ledger and outbox rows are committed together before asynchronous delivery.
+
+A separate lifespan task emits an applied snapshot revision/epoch/hash heartbeat every
+15 seconds and flushes the outbox via the private HMAC endpoint. The transport supplies
+an Idempotency-Key derived from the exact batch body. Lost ACKs retain event IDs and
+retry with persisted backoff; the CRM deduplicates. Only an applied, unexpired snapshot
+can be acknowledged. No valid configuration means no heartbeat claiming health.
+The CRM ignores older heartbeats for the same instance and derives health at 45/90s,
+checking revision, epoch and hash against the published configuration.

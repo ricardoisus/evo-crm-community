@@ -3,6 +3,9 @@
 Operator must migrate before use. Delivery is at-least-once; the CRM must dedup event_id.
 This module does not grant permission to send messages or invoke models.
 """
+import hashlib
+from contextvars import ContextVar
+from functools import wraps
 import copy
 import time
 import uuid
@@ -168,7 +171,7 @@ class HTTPDelivery:
     def __call__(self, events):
         body = json.dumps({"events": [sanitize(event) for event in events]}, ensure_ascii=False, separators=(",", ":")).encode()
         try:
-            response = self.client.post(self.base_url + self.path, content=body, headers=signed(body, self.secret, path=self.path))
+            response = self.client.post(self.base_url + self.path, content=body, headers={**signed(body, self.secret, path=self.path), "Idempotency-Key": hashlib.sha256(body).hexdigest()})
             if response.status_code != 200 or len(response.content) > 16384:
                 return []
             data = response.json()
@@ -177,3 +180,92 @@ class HTTPDelivery:
             return [identifier(value) for value in data["acknowledged"]]
         except Exception:
             return []
+
+
+# Each worker execution owns its provider calls, including media and tool rounds.
+_execution = ContextVar("telemetry_execution", default=None)
+
+
+def measured(provider):
+    def decorate(method):
+        @wraps(method)
+        def call(self, *args, **kwargs):
+            execution = _execution.get()
+            if execution is None:
+                return method(self, *args, **kwargs)
+            call_id = str(uuid.uuid4())
+            before = len(self.usage)
+            try:
+                return method(self, *args, **kwargs)
+            finally:
+                usage = self.usage[-1] if len(self.usage) > before else {}
+                model = (kwargs.get("json", {}).get("model") if provider == "openai"
+                         else "whisper-large-v3-turbo")
+                execution.usage(call_id, provider, model, usage)
+        return call
+    return decorate
+
+
+class Execution:
+    def __init__(self, telemetry, snapshot, row, role, clock):
+        self.telemetry, self.snapshot, self.clock = telemetry, snapshot, clock
+        self.id = str(uuid.uuid4())
+        self.started = clock()
+        self.row, self.role = row, role
+        try:
+            self.conversation_id = identifier(str(row["id"]))
+        except ValueError:
+            self.conversation_id = str(uuid.uuid5(uuid.UUID(snapshot.payload["deployment_id"]), str(row["id"])))
+        self.outcome = "none"
+        self.token = _execution.set(self)
+
+    def event(self, kind, **fields):
+        return dict(event_id=str(uuid.uuid4()), deployment_id=self.snapshot.payload["deployment_id"],
+                    kind=kind, occurred_ms=int(self.clock() * 1000), **fields)
+
+    def usage(self, call_id, provider, model, usage):
+        # J7 connects measurement without inventing a tariff or zero cost.
+        # Unpriced calls (including failed/ambiguous calls) remain unknown.
+        def count(name, details=None):
+            value = usage.get(name, 0) if details is None else (usage.get(details) or {}).get(name, 0)
+            return value if type(value) is int and value >= 0 else 0
+        self.telemetry.record(self.event("usage", call_id=call_id, execution_id=self.id,
+            source="live", provider=provider, model=model,
+            input_tokens=count("input_tokens"), cached_tokens=count("cached_tokens", "input_tokens_details"),
+            output_tokens=count("output_tokens"), reasoning_tokens=count("reasoning_tokens", "output_tokens_details"),
+            cost_micro_usd=None, usage_state="unknown"))
+
+    def finish(self, status):
+        _execution.reset(self.token)
+        self.telemetry.record(self.event("execution", execution_id=self.id,
+            conversation_id=self.conversation_id,
+            role=self.role, source="live", revision=self.snapshot.payload["revision"],
+            policy_epoch=self.snapshot.payload["policy_epoch"], status=status,
+            latency_ms=max(0, int((self.clock() - self.started) * 1000)), outcome=self.outcome))
+
+
+class TelemetryPump:
+    """Separate lifecycle loop: heartbeat is not delayed by inference or typing."""
+    def __init__(self, worker, deliver, integrations, clock=time.time):
+        self.worker, self.deliver, self.integrations, self.clock = worker, deliver, integrations, clock
+        self.instance_id = str(uuid.uuid4())
+        self.next_heartbeat = 0
+
+    def tick(self):
+        now = self.clock()
+        if now >= self.next_heartbeat:
+            try:
+                current = self.worker.configuration_cache.pin()  # expired/revoked lease cannot claim health
+                snapshot = self.worker.snapshot  # ACK only what prepare actually applied
+                if snapshot is not None and current.fence() == snapshot.fence():
+                    snapshot = current  # same applied configuration, renewed lease
+                if snapshot is not None and self.worker.configuration_cache.clock() >= snapshot.expires_at:
+                    snapshot = None
+            except Exception:
+                snapshot = None
+            if snapshot is not None:
+                self.worker.telemetry.record(dict(event_id=str(uuid.uuid4()),
+                    deployment_id=snapshot.payload["deployment_id"], kind="heartbeat", occurred_ms=int(now * 1000),
+                    instance_id=self.instance_id, **snapshot.fence(), integrations=self.integrations))
+                self.next_heartbeat = now + 15
+        return self.worker.telemetry.flush(self.deliver, now_ms=int(now * 1000))
