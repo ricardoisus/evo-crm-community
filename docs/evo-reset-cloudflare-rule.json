@@ -1,0 +1,10 @@
+{
+  "ref": "evo_reset_disable_rum_n8",
+  "description": "Evo reset de senha sem analytics Cloudflare",
+  "expression": "(http.host eq \"evo.agenciavetorial.com\" and starts_with(http.request.uri.path, \"/auth/reset-password\"))",
+  "action": "set_config",
+  "action_parameters": {
+    "disable_rum": true
+  },
+  "enabled": true
+}

@@ -75,3 +75,17 @@ invalidar tokens pending sob lock e preservar auditoria antes de trocar imagens.
 Conferir 1/1, readiness/front 200 e configuração efetiva nos dois processos.
 Ensaio em seco valida payload idêntico aos backups sem enviar PUT de reversão;
 ensaio de down só no clone isolado. Não houve necessidade de rollback real.
+
+## Exclusão de analytics de borda
+
+A inspeção do navegador público encontrou injeção automática de beacon Cloudflare
+no reset, embora o bundle da aplicação não inicie analytics. Aplicar somente a
+regra em [evo-reset-cloudflare-rule.json](evo-reset-cloudflare-rule.json), anexando-a
+ao ruleset http_config_settings 65e42b04b408430faf5f1e193208a448 da zona
+420aa6fb1603f391c51765052ad13021. Preservar todas as regras preexistentes.
+Backup integral do ruleset no diretório privado N8 antes do POST. Reversão: remover
+somente o ID criado por esta etapa. Confirmar GET da regra e navegador com zero
+requests externos no reset; não alterar analytics das demais rotas.
+
+Fonte: [Cloudflare Configuration Rules](https://developers.cloudflare.com/rules/configuration-rules/settings/),
+parâmetro disable_rum. Alteração necessária para satisfazer N2 §4 e N5.
