@@ -282,3 +282,9 @@ Implantada pelo Portainer; piloto intacto (`+5521973801603`), nenhuma mensagem e
 - Runtime 102: `ghcr.io/ricardoisus/evo-crm-community/vetorial-agente:vetorial-d792169@sha256:7393864a4d9ad5de2289d707dc00b26caf2b725be162d16c874909543a8a916f`, `VETORIAL_AGENT_CONTROL_SOURCE=crm`, `VETORIAL_AGENT_DEPLOYMENT_ID=c833b55a-e7b4-4d23-8b14-d57c902c24bf`.
 - CRM e runtime gerados fora do Actions (amd64, provenance/SBOM). Migrações aditivas CRM até `20261113130000`; banco `vetorial_agente` com 12 tabelas.
 - Backup: manager01 `/root/evo_crm/backups/integracao-i7-20261114`. Reversão: digests A14 acima nesta página (CRM `vetorial-7d55b91`, runtime `vetorial-b848276`, frontend `vetorial-783a951`) e passo a passo no runbook da frente Evo CRM Agentes.
+
+## User invitations — 2026-11-16
+
+Deployment configuration, explicit additive migration, SMTP correction and rollback:
+[vetorial-invitations.md](vetorial-invitations.md). Runtime proof is recorded in the
+Vetorial project deliverable `entregas/N8-implantacao.md`.
