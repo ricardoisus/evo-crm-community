@@ -4,7 +4,7 @@ O n8n continua como único emissor de produção. O [runbook da revisão Rails](
 
 | Stacks do Portainer | Revisão integrada | Tag GHCR |
 | --- | --- | --- |
-| `02_evo_crm` e `03_evo_crm_sidekiq` | [Rails PR 48](https://github.com/ricardoisus/evo-ai-crm-community/pull/48) | `ghcr.io/ricardoisus/evo-ai-crm-community:vetorial-d6dcf6c` |
+| `02_evo_crm` e `03_evo_crm_sidekiq` | [Rails PR 48](https://github.com/ricardoisus/evo-ai-crm-community/pull/48) | `ghcr.io/ricardoisus/evo-ai-crm-community:vetorial-d6dcf6c@sha256:e466108ff1de32f095579bd1022bc148e7537f3ea42b41b45f3bc83ce38fdabd` |
 | `08_evo_frontend` | [Frontend PR 32](https://github.com/ricardoisus/evo-ai-frontend-community/pull/32) | `ghcr.io/ricardoisus/evo-ai-frontend-community:vetorial-b4fb10e@sha256:da4d9851bb935871fc78e349ddaf094a597f45e9da58b511a0447b977f83a989` |
 
 As três stacks são gerenciadas no Portainer. Aplique as mudanças abaixo sobre o compose retornado pela API de cada stack. O `docker-compose.swarm.yaml` da raiz é um modelo de instalação. Use manifestos GHCR `linux/amd64` fixados por digest. Antes do deploy, salve o compose, as variáveis da stack e o digest atualmente em execução em backup restrito. Confirme que nenhuma stack mudou desde a leitura usada para preparar a atualização.
